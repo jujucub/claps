@@ -203,11 +203,21 @@ async function NotifyResult(
   const threadTs = GetThreadTs(task);
 
   if (result.success) {
+    // Claudeの出力を送信（長すぎる場合は切り詰め）
+    const maxLength = 3000;
+    let message = result.output.trim();
+    if (message.length > maxLength) {
+      message = message.slice(0, maxLength) + '\n...(省略)';
+    }
+    if (!message) {
+      message = '処理が完了しました（出力なし）';
+    }
+
     await NotifyTaskCompleted(
       slackApp,
       _config.slackChannelId,
       task.id,
-      '完了しました',
+      message,
       result.prUrl,
       threadTs
     );

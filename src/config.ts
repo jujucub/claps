@@ -9,6 +9,7 @@ import type { Config } from './types/index.js';
  * 環境変数から設定を読み込む
  */
 export function LoadConfig(): Config {
+  // ANTHROPIC_API_KEY は 認証して使用する時は不要（任意）
   const anthropicApiKey = process.env['ANTHROPIC_API_KEY'];
   const slackBotToken = process.env['SLACK_BOT_TOKEN'];
   const slackAppToken = process.env['SLACK_APP_TOKEN'];
@@ -17,9 +18,6 @@ export function LoadConfig(): Config {
   const githubReposStr = process.env['GITHUB_REPOS'];
 
   // 必須項目のバリデーション
-  if (!anthropicApiKey) {
-    throw new Error('ANTHROPIC_API_KEY is required');
-  }
   if (!slackBotToken) {
     throw new Error('SLACK_BOT_TOKEN is required');
   }

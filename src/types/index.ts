@@ -87,7 +87,7 @@ export interface QuestionResponse {
 
 // 設定
 export interface Config {
-  readonly anthropicApiKey: string;
+  readonly anthropicApiKey?: string; // Max Plan 使用時は不要
   readonly slackBotToken: string;
   readonly slackAppToken: string;
   readonly slackChannelId: string;

@@ -50,14 +50,28 @@ export class ClaudeRunner {
       let stderr = '';
       let isResolved = false;
 
-      // Claude CLI を起動
-      const claudeProcess = spawn('claude', ['--print', prompt], {
-        cwd: options.workingDirectory,
-        env: {
-          ...process.env,
-          // Claude CLI に必要な環境変数を継承
-        },
-        shell: true,
+      console.log(`Starting Claude CLI with prompt: ${prompt.slice(0, 100)}...`);
+      console.log(`Working directory: ${options.workingDirectory}`);
+
+      // Claude CLI を起動（-p オプションで非対話モード）
+      const claudeProcess = spawn(
+        'claude',
+        ['-p', '--output-format', 'text', prompt],
+        {
+          cwd: options.workingDirectory,
+          env: {
+            ...process.env,
+          },
+          stdio: ['pipe', 'pipe', 'pipe'],
+          shell: false,
+        }
+      );
+
+      console.log(`Claude process spawned with PID: ${claudeProcess.pid}`);
+
+      // spawn エラーをすぐにキャッチ
+      claudeProcess.on('spawn', () => {
+        console.log('Claude process spawn event fired');
       });
 
       // 実行中プロセスとして登録
@@ -82,20 +96,25 @@ export class ClaudeRunner {
 
       // 標準出力
       claudeProcess.stdout?.on('data', (data: Buffer) => {
+        const chunk = data.toString();
+        console.log(`Claude stdout: ${chunk.slice(0, 200)}`);
         if (stdout.length < maxOutputSize) {
-          stdout += data.toString();
+          stdout += chunk;
         }
       });
 
       // 標準エラー
       claudeProcess.stderr?.on('data', (data: Buffer) => {
+        const chunk = data.toString();
+        console.log(`Claude stderr: ${chunk.slice(0, 200)}`);
         if (stderr.length < maxOutputSize) {
-          stderr += data.toString();
+          stderr += chunk;
         }
       });
 
       // プロセス終了
       claudeProcess.on('close', (code) => {
+        console.log(`Claude process exited with code: ${code}`);
         if (!isResolved) {
           isResolved = true;
           clearTimeout(timeoutHandle);
@@ -121,6 +140,7 @@ export class ClaudeRunner {
 
       // エラー
       claudeProcess.on('error', (error) => {
+        console.log(`Claude process error: ${error.message}`);
         if (!isResolved) {
           isResolved = true;
           clearTimeout(timeoutHandle);
@@ -132,6 +152,13 @@ export class ClaudeRunner {
           });
         }
       });
+
+      // stdin/stdout/stderr の接続確認
+      console.log(`stdout connected: ${!!claudeProcess.stdout}`);
+      console.log(`stderr connected: ${!!claudeProcess.stderr}`);
+
+      // 重要: stdin を閉じないと Claude CLI が入力待ちでブロックする
+      claudeProcess.stdin?.end();
     });
   }
 
