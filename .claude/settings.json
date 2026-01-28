@@ -1,0 +1,25 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 $CLAUDE_PROJECT_DIR/.claude/hooks/slack-approval.py",
+            "timeout": 320000
+          }
+        ]
+      }
+    ]
+  },
+  "mcpServers": {
+    "ask-human": {
+      "command": "node",
+      "args": ["$CLAUDE_PROJECT_DIR/mcp-servers/ask-human/dist/index.js"],
+      "env": {
+        "APPROVAL_SERVER_URL": "http://localhost:3001"
+      }
+    }
+  }
+}
