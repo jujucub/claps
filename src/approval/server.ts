@@ -181,7 +181,7 @@ async function HandleApprovalRequest(hookInput: HookInput): Promise<HookOutput> 
   console.log(`Requesting approval for: ${tool_name}`);
 
   try {
-    const decision = await RequestApproval(
+    const result = await RequestApproval(
       _slackApp,
       _slackChannelId,
       requestId,
@@ -190,9 +190,14 @@ async function HandleApprovalRequest(hookInput: HookInput): Promise<HookOutput> 
       command
     );
 
+    let message = result.decision === 'allow' ? 'Approved by user' : 'Denied by user';
+    if (result.comment) {
+      message += `: ${result.comment}`;
+    }
+
     return {
-      permissionDecision: decision,
-      message: decision === 'allow' ? 'Approved by user' : 'Denied by user',
+      permissionDecision: result.decision,
+      message,
     };
   } catch (error) {
     console.error('Approval request failed:', error);

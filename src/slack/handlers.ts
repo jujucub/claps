@@ -1,11 +1,11 @@
 /**
  * sumomo - Slack イベントハンドラー
- * メンション、ボタンクリック、メッセージの処理
+ * メンション、ボタンクリック、モーダル、メッセージの処理
  */
 
 import type { App } from '@slack/bolt';
 import type {
-  ApprovalDecision,
+  ApprovalResult,
   SlackTaskMetadata,
 } from '../types/index.js';
 
@@ -13,7 +13,11 @@ import type {
 interface PendingApproval {
   readonly requestId: string;
   readonly taskId: string;
-  resolve: (decision: ApprovalDecision) => void;
+  readonly tool: string;
+  readonly command: string;
+  readonly channelId: string;
+  readonly messageTs: string;
+  resolve: (result: ApprovalResult) => void;
 }
 
 // 質問待ちリクエストの管理
@@ -68,7 +72,7 @@ export function RegisterSlackHandlers(
     await onMention(metadata, prompt);
   });
 
-  // 承認ボタンのクリック処理
+  // 承認ボタンのクリック処理（モーダルを開く）
   app.action('approval_allow', async ({ ack, body, client }) => {
     await ack();
 
@@ -81,26 +85,55 @@ export function RegisterSlackHandlers(
     if (!requestId) return;
 
     const pending = _pendingApprovals.get(requestId);
-    if (pending) {
-      pending.resolve('allow');
-      _pendingApprovals.delete(requestId);
+    if (!pending) return;
 
-      // メッセージを更新
-      await client.chat.update({
-        channel: body.channel?.id ?? channelId,
-        ts: body.message?.ts ?? '',
-        text: '✅ 許可されました',
+    // モーダルを開く
+    await client.views.open({
+      trigger_id: body.trigger_id,
+      view: {
+        type: 'modal',
+        callback_id: `approval_modal_allow_${requestId}`,
+        title: {
+          type: 'plain_text',
+          text: '実行を許可',
+        },
+        submit: {
+          type: 'plain_text',
+          text: '許可する',
+        },
+        close: {
+          type: 'plain_text',
+          text: 'キャンセル',
+        },
         blocks: [
           {
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: `✅ *許可されました* by <@${body.user.id}>`,
+              text: `*ツール:* ${pending.tool}\n*コマンド:*\n\`\`\`${pending.command.slice(0, 500)}\`\`\``,
+            },
+          },
+          {
+            type: 'input',
+            block_id: 'comment_block',
+            optional: true,
+            element: {
+              type: 'plain_text_input',
+              action_id: 'comment_input',
+              multiline: true,
+              placeholder: {
+                type: 'plain_text',
+                text: 'コメントがあれば入力してください（任意）',
+              },
+            },
+            label: {
+              type: 'plain_text',
+              text: 'コメント',
             },
           },
         ],
-      });
-    }
+      },
+    });
   });
 
   app.action('approval_deny', async ({ ack, body, client }) => {
@@ -115,26 +148,143 @@ export function RegisterSlackHandlers(
     if (!requestId) return;
 
     const pending = _pendingApprovals.get(requestId);
-    if (pending) {
-      pending.resolve('deny');
-      _pendingApprovals.delete(requestId);
+    if (!pending) return;
 
-      // メッセージを更新
-      await client.chat.update({
-        channel: body.channel?.id ?? channelId,
-        ts: body.message?.ts ?? '',
-        text: '❌ 拒否されました',
+    // モーダルを開く
+    await client.views.open({
+      trigger_id: body.trigger_id,
+      view: {
+        type: 'modal',
+        callback_id: `approval_modal_deny_${requestId}`,
+        title: {
+          type: 'plain_text',
+          text: '実行を拒否',
+        },
+        submit: {
+          type: 'plain_text',
+          text: '拒否する',
+        },
+        close: {
+          type: 'plain_text',
+          text: 'キャンセル',
+        },
         blocks: [
           {
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: `❌ *拒否されました* by <@${body.user.id}>`,
+              text: `*ツール:* ${pending.tool}\n*コマンド:*\n\`\`\`${pending.command.slice(0, 500)}\`\`\``,
+            },
+          },
+          {
+            type: 'input',
+            block_id: 'comment_block',
+            optional: true,
+            element: {
+              type: 'plain_text_input',
+              action_id: 'comment_input',
+              multiline: true,
+              placeholder: {
+                type: 'plain_text',
+                text: '拒否理由や代替案があれば入力してください（任意）',
+              },
+            },
+            label: {
+              type: 'plain_text',
+              text: 'コメント',
             },
           },
         ],
-      });
+      },
+    });
+  });
+
+  // モーダル送信処理（許可）
+  app.view(/^approval_modal_allow_/, async ({ ack, view, body, client }) => {
+    await ack();
+
+    const callbackId = view.callback_id;
+    const requestId = callbackId.replace('approval_modal_allow_', '');
+
+    const pending = _pendingApprovals.get(requestId);
+    if (!pending) return;
+
+    // コメントを取得
+    const commentBlock = view.state.values['comment_block'];
+    const comment = commentBlock?.['comment_input']?.value ?? '';
+
+    // 承認を解決
+    pending.resolve({
+      decision: 'allow',
+      comment: comment || undefined,
+      respondedBy: body.user.id,
+    });
+    _pendingApprovals.delete(requestId);
+
+    // 元のメッセージを更新
+    let updateText = `✅ *許可されました* by <@${body.user.id}>`;
+    if (comment) {
+      updateText += `\n💬 コメント: ${comment}`;
     }
+
+    await client.chat.update({
+      channel: pending.channelId,
+      ts: pending.messageTs,
+      text: '✅ 許可されました',
+      blocks: [
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: updateText,
+          },
+        },
+      ],
+    });
+  });
+
+  // モーダル送信処理（拒否）
+  app.view(/^approval_modal_deny_/, async ({ ack, view, body, client }) => {
+    await ack();
+
+    const callbackId = view.callback_id;
+    const requestId = callbackId.replace('approval_modal_deny_', '');
+
+    const pending = _pendingApprovals.get(requestId);
+    if (!pending) return;
+
+    // コメントを取得
+    const commentBlock = view.state.values['comment_block'];
+    const comment = commentBlock?.['comment_input']?.value ?? '';
+
+    // 拒否を解決
+    pending.resolve({
+      decision: 'deny',
+      comment: comment || undefined,
+      respondedBy: body.user.id,
+    });
+    _pendingApprovals.delete(requestId);
+
+    // 元のメッセージを更新
+    let updateText = `❌ *拒否されました* by <@${body.user.id}>`;
+    if (comment) {
+      updateText += `\n💬 コメント: ${comment}`;
+    }
+
+    await client.chat.update({
+      channel: pending.channelId,
+      ts: pending.messageTs,
+      text: '❌ 拒否されました',
+      blocks: [
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: updateText,
+          },
+        },
+      ],
+    });
   });
 
   // 質問への回答ボタン（動的アクションID対応）
@@ -181,7 +331,7 @@ export function RegisterSlackHandlers(
 }
 
 /**
- * 承認リクエストを Slack に送信し、回答を待つ
+ * 承認リクエストを Slack に送信し、回答を待つ（モーダル対応）
  */
 export async function RequestApproval(
   app: App,
@@ -189,19 +339,14 @@ export async function RequestApproval(
   requestId: string,
   taskId: string,
   tool: string,
-  command: string
-): Promise<ApprovalDecision> {
+  command: string,
+  threadTs?: string
+): Promise<ApprovalResult> {
   return new Promise((resolve) => {
-    // 承認待ちとして登録
-    _pendingApprovals.set(requestId, {
-      requestId,
-      taskId,
-      resolve,
-    });
-
     // Slack にメッセージを送信
     void app.client.chat.postMessage({
       channel: channelId,
+      thread_ts: threadTs,
       text: `🍑 実行許可リクエスト: ${tool}`,
       blocks: [
         {
@@ -260,6 +405,17 @@ export async function RequestApproval(
           ],
         },
       ],
+    }).then((result) => {
+      // 承認待ちとして登録
+      _pendingApprovals.set(requestId, {
+        requestId,
+        taskId,
+        tool,
+        command,
+        channelId,
+        messageTs: result.ts ?? '',
+        resolve,
+      });
     });
   });
 }
@@ -273,7 +429,8 @@ export async function AskQuestion(
   requestId: string,
   taskId: string,
   question: string,
-  options: readonly string[]
+  options: readonly string[],
+  threadTs?: string
 ): Promise<string> {
   return new Promise((resolve) => {
     // 質問待ちとして登録
@@ -298,6 +455,7 @@ export async function AskQuestion(
     // Slack にメッセージを送信
     void app.client.chat.postMessage({
       channel: channelId,
+      thread_ts: threadTs,
       text: `🍑 質問: ${question}`,
       blocks: [
         {
@@ -322,6 +480,52 @@ export async function AskQuestion(
       ],
     });
   });
+}
+
+/**
+ * GitHub Issue 用のスレッドを作成する
+ */
+export async function CreateIssueThread(
+  app: App,
+  channelId: string,
+  owner: string,
+  repo: string,
+  issueNumber: number,
+  issueTitle: string,
+  issueUrl: string
+): Promise<string> {
+  const result = await app.client.chat.postMessage({
+    channel: channelId,
+    text: `🍑 GitHub Issue の処理を開始します`,
+    blocks: [
+      {
+        type: 'header',
+        text: {
+          type: 'plain_text',
+          text: '🍑 GitHub Issue 処理開始',
+          emoji: true,
+        },
+      },
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `*<${issueUrl}|#${issueNumber}: ${issueTitle}>*\n\`${owner}/${repo}\``,
+        },
+      },
+      {
+        type: 'context',
+        elements: [
+          {
+            type: 'mrkdwn',
+            text: '処理の進捗はこのスレッドに投稿されます',
+          },
+        ],
+      },
+    ],
+  });
+
+  return result.ts ?? '';
 }
 
 /**
@@ -378,6 +582,22 @@ export async function NotifyError(
   await app.client.chat.postMessage({
     channel: channelId,
     text: `🍑 エラーが発生しました: ${error}`,
+    thread_ts: threadTs,
+  });
+}
+
+/**
+ * 進捗を通知する
+ */
+export async function NotifyProgress(
+  app: App,
+  channelId: string,
+  message: string,
+  threadTs?: string
+): Promise<void> {
+  await app.client.chat.postMessage({
+    channel: channelId,
+    text: `🍑 ${message}`,
     thread_ts: threadTs,
   });
 }

@@ -29,6 +29,7 @@ export interface GitHubTaskMetadata {
   readonly issueNumber: number;
   readonly issueTitle: string;
   readonly issueUrl: string;
+  slackThreadTs?: string; // Issue用のSlackスレッド
 }
 
 // Slack からのタスクメタデータ
@@ -62,9 +63,17 @@ export interface ApprovalRequest {
 // 承認決定
 export type ApprovalDecision = 'allow' | 'deny';
 
+// 承認結果（コメント付き）
+export interface ApprovalResult {
+  readonly decision: ApprovalDecision;
+  readonly comment?: string;
+  readonly respondedBy?: string;
+}
+
 export interface ApprovalResponse {
   readonly requestId: string;
   readonly decision: ApprovalDecision;
+  readonly comment?: string;
   readonly respondedBy?: string;
   readonly timestamp: Date;
 }

@@ -15,9 +15,10 @@ import {
 } from './slack/bot.js';
 import {
   RegisterSlackHandlers,
-  NotifyTaskStarted,
   NotifyTaskCompleted,
   NotifyError,
+  NotifyProgress,
+  CreateIssueThread,
 } from './slack/handlers.js';
 import {
   InitGitHubPoller,
@@ -32,6 +33,14 @@ import {
   SetCurrentTaskId,
   ClearCurrentTaskId,
 } from './approval/server.js';
+import {
+  CreateWorktree,
+  RemoveWorktree,
+  CommitAndPush,
+  CreatePullRequest,
+  CleanupAllWorktrees,
+  type WorktreeInfo,
+} from './git/worktree.js';
 
 // アプリケーション状態
 let _isRunning = false;
@@ -86,6 +95,9 @@ async function Stop(): Promise<void> {
   await StopApprovalServer();
   await StopSlackBot();
 
+  // worktree をクリーンアップ
+  await CleanupAllWorktrees();
+
   console.log('🍑 sumomo を停止しました');
 }
 
@@ -113,19 +125,28 @@ async function HandleGitHubIssue(
 ): Promise<void> {
   if (!_taskQueue || !_config) return;
 
-  // タスクをキューに追加
-  const task = _taskQueue.AddTask('github', prompt, metadata);
-
-  // Slack に通知
+  // Slack にスレッドを作成
   const slackApp = GetSlackBot();
-  await NotifyTaskStarted(
+  const threadTs = await CreateIssueThread(
     slackApp,
     _config.slackChannelId,
-    task.id,
-    `Issue #${metadata.issueNumber}: ${metadata.issueTitle}`
+    metadata.owner,
+    metadata.repo,
+    metadata.issueNumber,
+    metadata.issueTitle,
+    metadata.issueUrl
   );
 
-  console.log(`Task added from GitHub: ${task.id}`);
+  // スレッドTsをmetadataに保存
+  const metadataWithThread: GitHubTaskMetadata = {
+    ...metadata,
+    slackThreadTs: threadTs,
+  };
+
+  // タスクをキューに追加
+  const task = _taskQueue.AddTask('github', prompt, metadataWithThread);
+
+  console.log(`Task added from GitHub: ${task.id} (thread: ${threadTs})`);
 }
 
 /**
@@ -153,10 +174,17 @@ async function ProcessNextTask(): Promise<void> {
   console.log(`Processing task: ${task.id}`);
 
   try {
-    // Claude CLI を実行
-    const result = await _claudeRunner.Run(task.id, task.prompt, {
-      workingDirectory: process.cwd(),
-    });
+    let result: { success: boolean; output: string; prUrl?: string; error?: string };
+
+    if (task.metadata.source === 'github') {
+      // GitHub Issue の場合は worktree で処理
+      result = await ProcessGitHubTask(task);
+    } else {
+      // Slack の場合は通常の処理
+      result = await _claudeRunner.Run(task.id, task.prompt, {
+        workingDirectory: process.cwd(),
+      });
+    }
 
     // タスクを完了としてマーク
     _taskQueue.CompleteTask(task.id, result);
@@ -187,6 +215,101 @@ async function ProcessNextTask(): Promise<void> {
 
     // 次のタスクを処理
     void ProcessNextTask();
+  }
+}
+
+/**
+ * GitHub Issue タスクを worktree で処理する
+ */
+async function ProcessGitHubTask(
+  task: Task
+): Promise<{ success: boolean; output: string; prUrl?: string; error?: string }> {
+  if (!_claudeRunner || !_config) {
+    return { success: false, output: '', error: 'Not initialized' };
+  }
+
+  const meta = task.metadata as GitHubTaskMetadata;
+  const slackApp = GetSlackBot();
+  const threadTs = meta.slackThreadTs;
+  let worktreeInfo: WorktreeInfo | undefined;
+
+  try {
+    // worktree を作成
+    console.log(`Creating worktree for issue #${meta.issueNumber}...`);
+    await NotifyProgress(slackApp, _config.slackChannelId, 'worktree を作成中...', threadTs);
+
+    worktreeInfo = await CreateWorktree(
+      process.cwd(),
+      meta.owner,
+      meta.repo,
+      meta.issueNumber
+    );
+
+    await NotifyProgress(
+      slackApp,
+      _config.slackChannelId,
+      `ブランチ \`${worktreeInfo.branchName}\` で作業を開始します`,
+      threadTs
+    );
+
+    // Claude 用のプロンプトを構築（PR作成は sumomo が行うので、コード修正のみ依頼）
+    const worktreePrompt = `${task.prompt}
+
+作業ディレクトリ: ${worktreeInfo.worktreePath}
+ブランチ: ${worktreeInfo.branchName}
+
+注意事項:
+- コードの修正を行ってください
+- コミットやPR作成は不要です（システムが自動で行います）
+- 修正が完了したら、変更内容の概要を報告してください`;
+
+    // Claude CLI を worktree ディレクトリで実行
+    const result = await _claudeRunner.Run(task.id, worktreePrompt, {
+      workingDirectory: worktreeInfo.worktreePath,
+    });
+
+    if (!result.success) {
+      return result;
+    }
+
+    // 変更をコミット＆プッシュ
+    await NotifyProgress(slackApp, _config.slackChannelId, 'コミット＆プッシュ中...', threadTs);
+
+    const commitMessage = `fix: Issue #${meta.issueNumber} - ${meta.issueTitle}`;
+    const hasChanges = await CommitAndPush(worktreeInfo, commitMessage);
+
+    if (!hasChanges) {
+      return {
+        success: true,
+        output: result.output + '\n\n（変更なし - PRは作成されませんでした）',
+      };
+    }
+
+    // PR を作成
+    await NotifyProgress(slackApp, _config.slackChannelId, 'PR を作成中...', threadTs);
+
+    const prTitle = `fix: Issue #${meta.issueNumber} - ${meta.issueTitle}`;
+    const prBody = `## 概要
+Issue #${meta.issueNumber} に対応しました。
+
+## 変更内容
+${result.output.slice(0, 1000)}
+
+---
+🍑 Generated by sumomo`;
+
+    const prUrl = await CreatePullRequest(worktreeInfo, prTitle, prBody);
+
+    return {
+      success: true,
+      output: result.output,
+      prUrl,
+    };
+  } finally {
+    // worktree を削除
+    if (worktreeInfo) {
+      await RemoveWorktree(meta.owner, meta.repo, meta.issueNumber);
+    }
   }
 }
 
@@ -248,6 +371,9 @@ async function NotifyResult(
 function GetThreadTs(task: Task): string | undefined {
   if (task.metadata.source === 'slack') {
     return task.metadata.threadTs;
+  }
+  if (task.metadata.source === 'github') {
+    return task.metadata.slackThreadTs;
   }
   return undefined;
 }
