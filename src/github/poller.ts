@@ -4,7 +4,7 @@
  */
 
 import { Octokit } from '@octokit/rest';
-import type { Config, GitHubTaskMetadata } from '../types/index.js';
+import type { Config, GitHubTaskMetadata, AllowedUsers } from '../types/index.js';
 import { GetTaskQueue } from '../queue/taskQueue.js';
 
 // ポーラー状態
@@ -15,6 +15,7 @@ interface PollerState {
 }
 
 let _octokit: Octokit | undefined;
+let _allowedUsers: AllowedUsers | undefined;
 let _state: PollerState = {
   isRunning: false,
   intervalId: null,
@@ -25,12 +26,27 @@ let _state: PollerState = {
 const _processedIssues = new Set<string>();
 
 /**
+ * GitHubユーザーがホワイトリストに含まれているかチェック
+ * GitHubユーザー名は大文字小文字を区別しないため、小文字に正規化して比較
+ */
+function IsUserAllowed(username: string): boolean {
+  if (!_allowedUsers) return false;
+  // ホワイトリストが空の場合は全員拒否
+  if (_allowedUsers.github.length === 0) return false;
+  const lowerUsername = username.toLowerCase();
+  return _allowedUsers.github.some(
+    (allowed) => allowed.toLowerCase() === lowerUsername
+  );
+}
+
+/**
  * GitHub Poller を初期化する
  */
 export function InitGitHubPoller(config: Config): void {
   _octokit = new Octokit({
     auth: config.githubToken,
   });
+  _allowedUsers = config.allowedUsers;
 }
 
 /**
@@ -133,14 +149,26 @@ async function PollRepoIssues(
 
     // Issue 本文に [sumomo] が含まれているかチェック
     const body = issue.body ?? '';
-    if (!ContainsSumomoMention(body)) {
-      // コメントもチェック
-      const hasMentionInComments = await CheckCommentsForMention(
-        owner,
-        repo,
-        issue.number
-      );
-      if (!hasMentionInComments) continue;
+    const issueAuthor = issue.user?.login ?? '';
+
+    let requestingUser: string | undefined;
+
+    if (ContainsSumomoMention(body)) {
+      // Issue本文に[sumomo]がある場合、Issue作成者をチェック
+      requestingUser = issueAuthor;
+    } else {
+      // コメントに[sumomo]があるかチェック（投稿者も取得）
+      requestingUser = await FindAllowedUserInComments(owner, repo, issue.number);
+    }
+
+    // [sumomo]タグが見つからない場合はスキップ
+    if (!requestingUser) continue;
+
+    // ホワイトリストチェック
+    if (!IsUserAllowed(requestingUser)) {
+      console.log(`Denied GitHub request from ${requestingUser} (not in whitelist): ${issueKey}`);
+      _processedIssues.add(issueKey); // 再処理を防ぐため記録
+      continue;
     }
 
     // タスクキューに既に存在する場合はスキップ
@@ -153,7 +181,7 @@ async function PollRepoIssues(
     // 処理対象として記録
     _processedIssues.add(issueKey);
 
-    console.log(`Found issue with [sumomo] tag: ${issueKey}`);
+    console.log(`Found issue with [sumomo] tag from ${requestingUser}: ${issueKey}`);
 
     const metadata: GitHubTaskMetadata = {
       source: 'github',
@@ -172,14 +200,15 @@ async function PollRepoIssues(
 }
 
 /**
- * コメントに [sumomo] が含まれているかチェックする
+ * コメントに [sumomo] が含まれているかチェックし、投稿者を返す
+ * 複数のコメントに[sumomo]がある場合は最初に見つかったものを返す
  */
-async function CheckCommentsForMention(
+async function FindAllowedUserInComments(
   owner: string,
   repo: string,
   issueNumber: number
-): Promise<boolean> {
-  if (!_octokit) return false;
+): Promise<string | undefined> {
+  if (!_octokit) return undefined;
 
   try {
     const { data: comments } = await _octokit.issues.listComments({
@@ -191,14 +220,18 @@ async function CheckCommentsForMention(
 
     for (const comment of comments) {
       if (ContainsSumomoMention(comment.body ?? '')) {
-        return true;
+        const login = comment.user?.login;
+        // loginがない場合は次のコメントをチェック
+        if (login) {
+          return login;
+        }
       }
     }
   } catch (error) {
     console.error(`Error checking comments for ${owner}/${repo}#${issueNumber}:`, error);
   }
 
-  return false;
+  return undefined;
 }
 
 /**

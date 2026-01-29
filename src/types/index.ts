@@ -94,6 +94,12 @@ export interface QuestionResponse {
   readonly timestamp: Date;
 }
 
+// ホワイトリスト設定（将来的に管理UIから設定可能にする）
+export interface AllowedUsers {
+  readonly github: readonly string[];  // GitHubユーザー名
+  readonly slack: readonly string[];   // SlackユーザーID
+}
+
 // 設定
 export interface Config {
   readonly anthropicApiKey?: string; // Max Plan 使用時は不要
@@ -104,6 +110,7 @@ export interface Config {
   readonly githubRepos: readonly string[];
   readonly approvalServerPort: number;
   readonly githubPollInterval: number;
+  readonly allowedUsers: AllowedUsers;
 }
 
 // Slack メッセージブロック

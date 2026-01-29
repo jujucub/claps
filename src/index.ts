@@ -72,7 +72,7 @@ async function Start(): Promise<void> {
 
   // Slack Bot を初期化・起動
   const slackApp = InitSlackBot(_config);
-  RegisterSlackHandlers(slackApp, _config.slackChannelId, HandleSlackMention);
+  RegisterSlackHandlers(slackApp, _config.slackChannelId, HandleSlackMention, _config.allowedUsers);
   await StartSlackBot();
 
   // 承認サーバーを初期化・起動

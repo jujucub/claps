@@ -7,7 +7,21 @@ import type { App } from '@slack/bolt';
 import type {
   ApprovalResult,
   SlackTaskMetadata,
+  AllowedUsers,
 } from '../types/index.js';
+
+// ホワイトリスト（RegisterSlackHandlersで設定）
+let _allowedUsers: AllowedUsers | undefined;
+
+/**
+ * SlackユーザーIDがホワイトリストに含まれているかチェック
+ */
+function IsUserAllowed(userId: string): boolean {
+  if (!_allowedUsers) return false;
+  // ホワイトリストが空の場合は全員拒否
+  if (_allowedUsers.slack.length === 0) return false;
+  return _allowedUsers.slack.includes(userId);
+}
 
 // 承認待ちリクエストの管理
 interface PendingApproval {
@@ -36,13 +50,27 @@ const _pendingQuestions = new Map<string, PendingQuestion>();
 export function RegisterSlackHandlers(
   app: App,
   channelId: string,
-  onMention: (metadata: SlackTaskMetadata, prompt: string) => Promise<void>
+  onMention: (metadata: SlackTaskMetadata, prompt: string) => Promise<void>,
+  allowedUsers: AllowedUsers
 ): void {
+  // ホワイトリストを保存
+  _allowedUsers = allowedUsers;
+
   // @sumomo メンションの処理
   app.event('app_mention', async ({ event, say }) => {
     const text = event.text;
     const userId = event.user ?? 'unknown';
     const threadTs = event.thread_ts ?? event.ts;
+
+    // ホワイトリストチェック
+    if (!IsUserAllowed(userId)) {
+      console.log(`Denied Slack request from ${userId} (not in whitelist)`);
+      await say({
+        text: 'このリクエストは処理できませんでした。',
+        thread_ts: threadTs,
+      });
+      return;
+    }
 
     // @sumomo を除いた指示テキスト
     const prompt = text.replace(/<@[A-Z0-9]+>/g, '').trim();

@@ -3,7 +3,17 @@
  */
 
 import 'dotenv/config';
-import type { Config } from './types/index.js';
+import type { Config, AllowedUsers } from './types/index.js';
+
+/**
+ * カンマ区切りの文字列を配列に変換する（空の場合は空配列）
+ */
+function ParseCommaSeparatedList(value: string | undefined): readonly string[] {
+  if (!value || value.trim() === '') {
+    return [];
+  }
+  return value.split(',').map((item) => item.trim()).filter((item) => item !== '');
+}
 
 /**
  * 環境変数から設定を読み込む
@@ -45,6 +55,20 @@ export function LoadConfig(): Config {
     10
   );
 
+  // ホワイトリスト設定（空の場合は全員拒否）
+  const allowedUsers: AllowedUsers = {
+    github: ParseCommaSeparatedList(process.env['ALLOWED_GITHUB_USERS']),
+    slack: ParseCommaSeparatedList(process.env['ALLOWED_SLACK_USERS']),
+  };
+
+  // ホワイトリストが空の場合は警告
+  if (allowedUsers.github.length === 0) {
+    console.warn('⚠️ ALLOWED_GITHUB_USERS is empty - all GitHub requests will be denied');
+  }
+  if (allowedUsers.slack.length === 0) {
+    console.warn('⚠️ ALLOWED_SLACK_USERS is empty - all Slack requests will be denied');
+  }
+
   return {
     anthropicApiKey,
     slackBotToken,
@@ -54,5 +78,6 @@ export function LoadConfig(): Config {
     githubRepos,
     approvalServerPort,
     githubPollInterval,
+    allowedUsers,
   };
 }
