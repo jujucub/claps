@@ -6,11 +6,15 @@
 import { spawn, type ChildProcess } from 'child_process';
 import type { TaskResult } from '../types/index.js';
 
+// 出力コールバック
+export type OutputCallback = (chunk: string, type: 'stdout' | 'stderr') => void;
+
 // 実行オプション
 export interface RunnerOptions {
   readonly workingDirectory: string;
   readonly timeout?: number;
   readonly maxOutputSize?: number;
+  readonly onOutput?: OutputCallback;
 }
 
 // 実行中のプロセス管理
@@ -54,13 +58,16 @@ export class ClaudeRunner {
       console.log(`Working directory: ${options.workingDirectory}`);
 
       // Claude CLI を起動（-p オプションで非対話モード）
+      // CLAUDE_PROJECT_DIR を設定して、親ディレクトリの設定を使用
+      const projectDir = process.cwd(); // sumomo本体のディレクトリ
       const claudeProcess = spawn(
         'claude',
-        ['-p', '--output-format', 'text', prompt],
+        ['-p', prompt],
         {
           cwd: options.workingDirectory,
           env: {
             ...process.env,
+            CLAUDE_PROJECT_DIR: projectDir,
           },
           stdio: ['pipe', 'pipe', 'pipe'],
           shell: false,
@@ -101,6 +108,10 @@ export class ClaudeRunner {
         if (stdout.length < maxOutputSize) {
           stdout += chunk;
         }
+        // コールバックを呼び出し
+        if (options.onOutput) {
+          options.onOutput(chunk, 'stdout');
+        }
       });
 
       // 標準エラー
@@ -109,6 +120,10 @@ export class ClaudeRunner {
         console.log(`Claude stderr: ${chunk.slice(0, 200)}`);
         if (stderr.length < maxOutputSize) {
           stderr += chunk;
+        }
+        // コールバックを呼び出し
+        if (options.onOutput) {
+          options.onOutput(chunk, 'stderr');
         }
       });
 
@@ -159,6 +174,15 @@ export class ClaudeRunner {
 
       // 重要: stdin を閉じないと Claude CLI が入力待ちでブロックする
       claudeProcess.stdin?.end();
+
+      // 定期的に状態をログ出力
+      const statusInterval = setInterval(() => {
+        console.log(`[Status] Claude PID ${claudeProcess.pid}: stdout=${stdout.length} chars, stderr=${stderr.length} chars`);
+      }, 10000); // 10秒ごと
+
+      claudeProcess.on('close', () => {
+        clearInterval(statusInterval);
+      });
     });
   }
 

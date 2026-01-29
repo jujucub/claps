@@ -41,6 +41,14 @@ import {
   CleanupAllWorktrees,
   type WorktreeInfo,
 } from './git/worktree.js';
+import {
+  CreateTmuxSession,
+  KillSession,
+  CapturePane,
+  IsClaudeFinished,
+  CleanupAllSessions,
+  GetSessionNameForIssue,
+} from './tmux/session.js';
 
 // アプリケーション状態
 let _isRunning = false;
@@ -97,6 +105,9 @@ async function Stop(): Promise<void> {
 
   // worktree をクリーンアップ
   await CleanupAllWorktrees();
+
+  // tmuxセッションをクリーンアップ
+  CleanupAllSessions();
 
   console.log('🍑 sumomo を停止しました');
 }
@@ -169,7 +180,8 @@ async function ProcessNextTask(): Promise<void> {
   if (!task) return;
 
   _isProcessing = true;
-  SetCurrentTaskId(task.id);
+  const threadTs = GetThreadTs(task);
+  SetCurrentTaskId(task.id, threadTs);
 
   console.log(`Processing task: ${task.id}`);
 
@@ -180,10 +192,54 @@ async function ProcessNextTask(): Promise<void> {
       // GitHub Issue の場合は worktree で処理
       result = await ProcessGitHubTask(task);
     } else {
-      // Slack の場合は通常の処理
+      // Slack の場合は通常の処理（出力をスレッドに投稿）
+      const slackApp = GetSlackBot();
+      const slackMeta = task.metadata;
+
+      let lastPostTime = 0;
+      let outputBuffer = '';
+      const postInterval = 3000;
+
+      const onOutput = async (chunk: string, _type: 'stdout' | 'stderr') => {
+        outputBuffer += chunk;
+        const now = Date.now();
+
+        if (now - lastPostTime >= postInterval && outputBuffer.trim()) {
+          lastPostTime = now;
+          const message = outputBuffer.slice(0, 1500);
+          outputBuffer = '';
+
+          try {
+            await NotifyProgress(
+              slackApp,
+              _config!.slackChannelId,
+              `\`\`\`\n${message}\n\`\`\``,
+              slackMeta.threadTs
+            );
+          } catch (e) {
+            console.error('Failed to post to Slack:', e);
+          }
+        }
+      };
+
       result = await _claudeRunner.Run(task.id, task.prompt, {
         workingDirectory: process.cwd(),
+        onOutput,
       });
+
+      // 残りのバッファを投稿
+      if (outputBuffer.trim()) {
+        try {
+          await NotifyProgress(
+            slackApp,
+            _config!.slackChannelId,
+            `\`\`\`\n${outputBuffer.slice(0, 1500)}\n\`\`\``,
+            slackMeta.threadTs
+          );
+        } catch (e) {
+          console.error('Failed to post final output to Slack:', e);
+        }
+      }
     }
 
     // タスクを完了としてマーク
@@ -219,12 +275,12 @@ async function ProcessNextTask(): Promise<void> {
 }
 
 /**
- * GitHub Issue タスクを worktree で処理する
+ * GitHub Issue タスクを tmux + worktree で処理する
  */
 async function ProcessGitHubTask(
   task: Task
 ): Promise<{ success: boolean; output: string; prUrl?: string; error?: string }> {
-  if (!_claudeRunner || !_config) {
+  if (!_config) {
     return { success: false, output: '', error: 'Not initialized' };
   }
 
@@ -232,6 +288,7 @@ async function ProcessGitHubTask(
   const slackApp = GetSlackBot();
   const threadTs = meta.slackThreadTs;
   let worktreeInfo: WorktreeInfo | undefined;
+  let sessionName: string | undefined;
 
   try {
     // worktree を作成
@@ -252,7 +309,7 @@ async function ProcessGitHubTask(
       threadTs
     );
 
-    // Claude 用のプロンプトを構築（PR作成は sumomo が行うので、コード修正のみ依頼）
+    // Claude 用のプロンプトを構築
     const worktreePrompt = `${task.prompt}
 
 作業ディレクトリ: ${worktreeInfo.worktreePath}
@@ -263,13 +320,81 @@ async function ProcessGitHubTask(
 - コミットやPR作成は不要です（システムが自動で行います）
 - 修正が完了したら、変更内容の概要を報告してください`;
 
-    // Claude CLI を worktree ディレクトリで実行
-    const result = await _claudeRunner.Run(task.id, worktreePrompt, {
-      workingDirectory: worktreeInfo.worktreePath,
+    // tmuxセッションを作成してClaude CLIを起動
+    sessionName = GetSessionNameForIssue(meta.owner, meta.repo, meta.issueNumber);
+    await NotifyProgress(slackApp, _config.slackChannelId, 'Claude を起動中...', threadTs);
+
+    await CreateTmuxSession(
+      sessionName,
+      worktreeInfo.worktreePath,
+      meta.issueNumber,
+      worktreePrompt
+    );
+
+    // セッションの出力を監視
+    let lastOutput = '';
+    let lastPostTime = 0;
+    const postInterval = 5000; // 5秒ごとに投稿
+
+    const result = await new Promise<{ success: boolean; output: string }>((resolve) => {
+      const checkInterval = setInterval(async () => {
+        const currentOutput = CapturePane(sessionName!, 500);
+
+        // 新しい出力があればSlackに投稿
+        if (currentOutput !== lastOutput) {
+          const newContent = currentOutput.slice(lastOutput.length);
+          lastOutput = currentOutput;
+
+          const now = Date.now();
+          if (now - lastPostTime >= postInterval && newContent.trim()) {
+            lastPostTime = now;
+            try {
+              // 最後の50行だけ投稿
+              const lines = newContent.split('\n').slice(-50).join('\n');
+              if (lines.trim()) {
+                await NotifyProgress(
+                  slackApp,
+                  _config!.slackChannelId,
+                  `\`\`\`\n${lines.slice(0, 1500)}\n\`\`\``,
+                  threadTs
+                );
+              }
+            } catch (e) {
+              console.error('Failed to post to Slack:', e);
+            }
+          }
+        }
+
+        // Claude CLIが終了したかチェック
+        if (IsClaudeFinished(currentOutput)) {
+          clearInterval(checkInterval);
+          resolve({
+            success: true,
+            output: currentOutput,
+          });
+        }
+      }, 2000); // 2秒ごとにチェック
+
+      // タイムアウト（10分）
+      setTimeout(() => {
+        clearInterval(checkInterval);
+        resolve({
+          success: false,
+          output: CapturePane(sessionName!, 500),
+        });
+      }, 600000);
     });
 
+    // セッションを終了
+    KillSession(sessionName);
+    sessionName = undefined;
+
     if (!result.success) {
-      return result;
+      return {
+        success: false,
+        output: result.output,
+        error: 'Claude CLI timed out',
+      };
     }
 
     // 変更をコミット＆プッシュ
@@ -306,6 +431,10 @@ ${result.output.slice(0, 1000)}
       prUrl,
     };
   } finally {
+    // セッションを終了
+    if (sessionName) {
+      KillSession(sessionName);
+    }
     // worktree を削除
     if (worktreeInfo) {
       await RemoveWorktree(meta.owner, meta.repo, meta.issueNumber);

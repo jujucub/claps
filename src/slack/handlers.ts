@@ -82,9 +82,11 @@ export function RegisterSlackHandlers(
     if (!action || action.type !== 'button') return;
 
     const requestId = action.value;
+    console.log(`[approval_allow] requestId: ${requestId}`);
     if (!requestId) return;
 
     const pending = _pendingApprovals.get(requestId);
+    console.log(`[approval_allow] pending found: ${!!pending}, pendingApprovals size: ${_pendingApprovals.size}`);
     if (!pending) return;
 
     // モーダルを開く
@@ -205,8 +207,10 @@ export function RegisterSlackHandlers(
 
     const callbackId = view.callback_id;
     const requestId = callbackId.replace('approval_modal_allow_', '');
+    console.log(`[modal_allow] callbackId: ${callbackId}, requestId: ${requestId}`);
 
     const pending = _pendingApprovals.get(requestId);
+    console.log(`[modal_allow] pending found: ${!!pending}, pendingApprovals size: ${_pendingApprovals.size}`);
     if (!pending) return;
 
     // コメントを取得
@@ -214,12 +218,14 @@ export function RegisterSlackHandlers(
     const comment = commentBlock?.['comment_input']?.value ?? '';
 
     // 承認を解決
+    console.log(`[modal_allow] Resolving approval with decision: allow`);
     pending.resolve({
       decision: 'allow',
       comment: comment || undefined,
       respondedBy: body.user.id,
     });
     _pendingApprovals.delete(requestId);
+    console.log(`[modal_allow] Deleted from pendingApprovals, size: ${_pendingApprovals.size}`);
 
     // 元のメッセージを更新
     let updateText = `✅ *許可されました* by <@${body.user.id}>`;
@@ -343,6 +349,17 @@ export async function RequestApproval(
   threadTs?: string
 ): Promise<ApprovalResult> {
   return new Promise((resolve) => {
+    // 先に承認待ちとして登録（ボタンクリック時に参照できるように）
+    _pendingApprovals.set(requestId, {
+      requestId,
+      taskId,
+      tool,
+      command,
+      channelId,
+      messageTs: '', // 後で更新
+      resolve,
+    });
+
     // Slack にメッセージを送信
     void app.client.chat.postMessage({
       channel: channelId,
@@ -406,16 +423,14 @@ export async function RequestApproval(
         },
       ],
     }).then((result) => {
-      // 承認待ちとして登録
-      _pendingApprovals.set(requestId, {
-        requestId,
-        taskId,
-        tool,
-        command,
-        channelId,
-        messageTs: result.ts ?? '',
-        resolve,
-      });
+      // messageTsを更新
+      const pending = _pendingApprovals.get(requestId);
+      if (pending) {
+        _pendingApprovals.set(requestId, {
+          ...pending,
+          messageTs: result.ts ?? '',
+        });
+      }
     });
   });
 }

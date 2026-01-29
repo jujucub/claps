@@ -2,26 +2,37 @@
 """
 sumomo - Slack 承認 Hook スクリプト
 PreToolUse Hook として実行され、危険な操作に対して Slack 経由で承認を求める
+承認後、tmux send-keys で Claude CLI に許可を送信する
 """
 
 import json
 import os
 import sys
+import subprocess
 import urllib.request
 import urllib.error
 
 # 承認サーバーのURL
 APPROVAL_SERVER_URL = os.environ.get('APPROVAL_SERVER_URL', 'http://localhost:3001')
 
+# tmuxセッション名（環境変数から取得）
+TMUX_SESSION = os.environ.get('SUMOMO_TMUX_SESSION', '')
+
 
 def main():
     """メインエントリーポイント"""
+    # SUMOMO_TMUX_SESSION が設定されていない場合は自動許可
+    # （sumomo 以外の通常のClaudeセッションでは承認をスキップ）
+    if not TMUX_SESSION:
+        output_result("allow")
+        return
+
     # 標準入力からHook入力を読み取る
     try:
         input_data = json.load(sys.stdin)
-    except json.JSONDecodeError as e:
-        # JSONパースエラーの場合は許可（安全側に倒さない設計）
-        print(json.dumps({"permissionDecision": "allow"}))
+    except json.JSONDecodeError:
+        # JSONパースエラーの場合は許可
+        output_result("allow")
         return
 
     tool_name = input_data.get('tool_name', '')
@@ -30,13 +41,17 @@ def main():
     # 承認サーバーに問い合わせ
     try:
         result = request_approval(tool_name, tool_input)
-        print(json.dumps(result))
+        decision = result.get("permissionDecision", "allow")
+        comment = result.get("message", "")
+
+        # tmuxセッションがある場合は、send-keysで許可/拒否を送信
+        if TMUX_SESSION:
+            send_tmux_response(decision, comment)
+
+        output_result(decision, comment)
     except Exception as e:
-        # エラーの場合は拒否（安全側に倒す）
-        print(json.dumps({
-            "permissionDecision": "deny",
-            "message": f"Approval request failed: {str(e)}"
-        }))
+        # エラーの場合は拒否
+        output_result("deny", f"Approval request failed: {str(e)}")
 
 
 def request_approval(tool_name: str, tool_input: dict) -> dict:
@@ -62,6 +77,49 @@ def request_approval(tool_name: str, tool_input: dict) -> dict:
         raise Exception(f"HTTP error: {e.code}")
     except urllib.error.URLError as e:
         raise Exception(f"URL error: {e.reason}")
+
+
+def send_tmux_response(decision: str, comment: str = ""):
+    """tmux send-keys で Claude CLI に許可/拒否を送信する"""
+    if not TMUX_SESSION:
+        return
+
+    try:
+        if decision == "allow":
+            if comment:
+                # 許可 + コメント: Tab → コメント → Enter
+                subprocess.run(['tmux', 'send-keys', '-t', TMUX_SESSION, 'Tab'], check=True)
+                subprocess.run(['tmux', 'send-keys', '-t', TMUX_SESSION, comment], check=True)
+                subprocess.run(['tmux', 'send-keys', '-t', TMUX_SESSION, 'Enter'], check=True)
+            else:
+                # 許可のみ: Enter（Yesがデフォルト選択）
+                subprocess.run(['tmux', 'send-keys', '-t', TMUX_SESSION, 'Enter'], check=True)
+        else:
+            # 拒否: 下矢印2回でNOに移動
+            subprocess.run(['tmux', 'send-keys', '-t', TMUX_SESSION, 'Down', 'Down'], check=True)
+            if comment:
+                # 拒否 + コメント: Tab → コメント → Enter
+                subprocess.run(['tmux', 'send-keys', '-t', TMUX_SESSION, 'Tab'], check=True)
+                subprocess.run(['tmux', 'send-keys', '-t', TMUX_SESSION, comment], check=True)
+                subprocess.run(['tmux', 'send-keys', '-t', TMUX_SESSION, 'Enter'], check=True)
+            else:
+                # 拒否のみ: Enter
+                subprocess.run(['tmux', 'send-keys', '-t', TMUX_SESSION, 'Enter'], check=True)
+
+        print(f"[Hook] Sent {decision} to tmux session: {TMUX_SESSION}", file=sys.stderr)
+    except subprocess.CalledProcessError as e:
+        print(f"[Hook] Failed to send tmux keys: {e}", file=sys.stderr)
+
+
+def output_result(decision: str, reason: str = ""):
+    """Claude CLI が期待する形式で結果を出力する"""
+    print(json.dumps({
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": decision,
+            "permissionDecisionReason": reason
+        }
+    }))
 
 
 if __name__ == '__main__':

@@ -20,6 +20,11 @@ let _slackChannelId: string | undefined;
 
 // 現在のタスクID（承認リクエストに紐付ける）
 let _currentTaskId: string | undefined;
+let _currentThreadTs: string | undefined;
+
+// 現在のタスクで許可されたツール（同じタスク内では自動許可）
+const _allowedToolsForTask = new Set<string>();
+const _autoApproveCounter = new Map<string, number>();
 
 // 承認が必要なコマンドパターン
 const DANGEROUS_BASH_PATTERNS = [
@@ -165,6 +170,22 @@ async function HandleApprovalRequest(hookInput: HookInput): Promise<HookOutput> 
     return { permissionDecision: 'allow' };
   }
 
+  // 同じタスク内で既に許可されたツールは自動許可
+  if (_allowedToolsForTask.has(tool_name)) {
+    // 自動許可のログは最初の5回だけ表示（ログ汚染防止）
+    const autoApproveCount = (_autoApproveCounter.get(tool_name) ?? 0) + 1;
+    _autoApproveCounter.set(tool_name, autoApproveCount);
+    if (autoApproveCount <= 5) {
+      console.log(`Auto-approved ${tool_name} (${autoApproveCount})`);
+    } else if (autoApproveCount === 6) {
+      console.log(`Auto-approved ${tool_name} (suppressing further logs...)`);
+    }
+    return {
+      permissionDecision: 'allow',
+      message: 'Auto-approved (already allowed in this task)',
+    };
+  }
+
   // Slack に承認リクエストを送信
   if (!_slackApp || !_slackChannelId) {
     console.error('Slack not configured for approval');
@@ -187,12 +208,18 @@ async function HandleApprovalRequest(hookInput: HookInput): Promise<HookOutput> 
       requestId,
       taskId,
       tool_name,
-      command
+      command,
+      _currentThreadTs
     );
 
     let message = result.decision === 'allow' ? 'Approved by user' : 'Denied by user';
     if (result.comment) {
       message += `: ${result.comment}`;
+    }
+
+    // 許可された場合、このタスク内では同じツールを自動許可
+    if (result.decision === 'allow') {
+      _allowedToolsForTask.add(tool_name);
     }
 
     return {
@@ -266,8 +293,11 @@ function FormatCommand(
 /**
  * 現在のタスクIDを設定する
  */
-export function SetCurrentTaskId(taskId: string): void {
+export function SetCurrentTaskId(taskId: string, threadTs?: string): void {
   _currentTaskId = taskId;
+  _currentThreadTs = threadTs;
+  // 新しいタスクでは許可済みツールをリセット
+  _allowedToolsForTask.clear();
 }
 
 /**
@@ -275,4 +305,7 @@ export function SetCurrentTaskId(taskId: string): void {
  */
 export function ClearCurrentTaskId(): void {
   _currentTaskId = undefined;
+  _currentThreadTs = undefined;
+  _allowedToolsForTask.clear();
+  _autoApproveCounter.clear();
 }
