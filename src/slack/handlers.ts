@@ -46,6 +46,7 @@ interface PendingApproval {
   readonly command: string;
   readonly channelId: string;
   readonly messageTs: string;
+  readonly requestedBySlackId?: string; // 承認権限を持つユーザー
   resolve: (result: ApprovalResult) => void;
 }
 
@@ -132,6 +133,16 @@ export function RegisterSlackHandlers(
     console.log(`[approval_allow] pending found: ${!!pending}, pendingApprovals size: ${_pendingApprovals.size}`);
     if (!pending) return;
 
+    // 権限チェック: リクエストした人だけが承認可能
+    if (pending.requestedBySlackId && body.user.id !== pending.requestedBySlackId) {
+      await client.chat.postEphemeral({
+        channel: pending.channelId,
+        user: body.user.id,
+        text: '🍑 この承認はリクエストした人だけができるのです！',
+      });
+      return;
+    }
+
     // モーダルを開く
     await client.views.open({
       trigger_id: body.trigger_id,
@@ -194,6 +205,16 @@ export function RegisterSlackHandlers(
 
     const pending = _pendingApprovals.get(requestId);
     if (!pending) return;
+
+    // 権限チェック: リクエストした人だけが拒否可能
+    if (pending.requestedBySlackId && body.user.id !== pending.requestedBySlackId) {
+      await client.chat.postEphemeral({
+        channel: pending.channelId,
+        user: body.user.id,
+        text: '🍑 この承認はリクエストした人だけができるのです！',
+      });
+      return;
+    }
 
     // モーダルを開く
     await client.views.open({
@@ -389,7 +410,8 @@ export async function RequestApproval(
   taskId: string,
   tool: string,
   command: string,
-  threadTs?: string
+  threadTs?: string,
+  requestedBySlackId?: string
 ): Promise<ApprovalResult> {
   return new Promise((resolve) => {
     // 先に承認待ちとして登録（ボタンクリック時に参照できるように）
@@ -400,8 +422,14 @@ export async function RequestApproval(
       command,
       channelId,
       messageTs: '', // 後で更新
+      requestedBySlackId,
       resolve,
     });
+
+    // メンションテキストを構築
+    const mentionText = requestedBySlackId
+      ? `<@${requestedBySlackId}> 承認をお願いするのでーす！`
+      : '';
 
     // Slack にメッセージを送信
     void app.client.chat.postMessage({
@@ -417,6 +445,17 @@ export async function RequestApproval(
             emoji: true,
           },
         },
+        ...(mentionText
+          ? [
+              {
+                type: 'section' as const,
+                text: {
+                  type: 'mrkdwn' as const,
+                  text: mentionText,
+                },
+              },
+            ]
+          : []),
         {
           type: 'section',
           fields: [

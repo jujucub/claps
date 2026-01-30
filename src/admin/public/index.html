@@ -30,6 +30,8 @@
         <button class="tab active" data-tab="github-users">GitHub ユーザー</button>
         <button class="tab" data-tab="slack-users">Slack ユーザー</button>
         <button class="tab" data-tab="github-repos">GitHub リポジトリ</button>
+        <button class="tab" data-tab="user-mappings">ユーザーマッピング</button>
+        <button class="tab" data-tab="admin-settings">管理者設定</button>
       </nav>
 
       <!-- GitHub ユーザー -->
@@ -74,6 +76,38 @@
           </div>
 
           <ul id="github-repos-list" class="item-list"></ul>
+        </div>
+      </section>
+
+      <!-- ユーザーマッピング -->
+      <section id="user-mappings" class="tab-content">
+        <div class="card">
+          <h2>ユーザーマッピング</h2>
+          <p class="description">GitHubユーザー名とSlackユーザーIDの紐付け（承認リクエストの通知先）</p>
+
+          <div class="form-group mapping-form">
+            <input type="text" id="mapping-github-input" placeholder="GitHubユーザー名">
+            <span class="mapping-arrow">→</span>
+            <input type="text" id="mapping-slack-input" placeholder="SlackユーザーID (例: U12345678)">
+            <button onclick="addUserMapping()">追加</button>
+          </div>
+
+          <ul id="user-mappings-list" class="item-list"></ul>
+        </div>
+      </section>
+
+      <!-- 管理者設定 -->
+      <section id="admin-settings" class="tab-content">
+        <div class="card">
+          <h2>管理者設定</h2>
+          <p class="description">マッピングがない場合に承認リクエストを受け取る管理者</p>
+
+          <div class="form-group">
+            <input type="text" id="admin-slack-user-input" placeholder="SlackユーザーID (例: U12345678)">
+            <button onclick="saveAdminSlackUser()">保存</button>
+          </div>
+
+          <p id="admin-slack-user-display" class="current-value"></p>
         </div>
       </section>
     </div>

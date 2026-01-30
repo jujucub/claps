@@ -27,6 +27,8 @@ function GetDefaultConfig(): AdminConfig {
     allowedGithubUsers: [],
     allowedSlackUsers: [],
     githubRepos: [],
+    userMappings: [],
+    adminSlackUser: '',
   };
 }
 
@@ -50,6 +52,18 @@ export function LoadAdminConfig(): AdminConfig {
         githubRepos: Array.isArray(parsed.githubRepos)
           ? parsed.githubRepos
           : [],
+        userMappings: Array.isArray(parsed.userMappings)
+          ? parsed.userMappings.filter(
+              (m): m is { github: string; slack: string } =>
+                typeof m === 'object' &&
+                m !== null &&
+                typeof m.github === 'string' &&
+                typeof m.slack === 'string'
+            )
+          : [],
+        adminSlackUser: typeof parsed.adminSlackUser === 'string'
+          ? parsed.adminSlackUser
+          : '',
       };
 
       console.log('Loaded admin config from', CONFIG_FILE);
@@ -117,4 +131,23 @@ export function OnConfigChange(callback: ConfigChangeCallback): void {
  */
 export function HasAdminConfig(): boolean {
   return fs.existsSync(CONFIG_FILE);
+}
+
+/**
+ * GitHubユーザー名からSlackユーザーIDを取得する
+ */
+export function GetSlackUserForGitHub(githubUsername: string): string | undefined {
+  const config = GetAdminConfig();
+  const mapping = config.userMappings.find(
+    (m) => m.github.toLowerCase() === githubUsername.toLowerCase()
+  );
+  return mapping?.slack;
+}
+
+/**
+ * 管理者のSlackユーザーIDを取得する
+ */
+export function GetAdminSlackUser(): string | undefined {
+  const config = GetAdminConfig();
+  return config.adminSlackUser || undefined;
 }

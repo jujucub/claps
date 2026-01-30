@@ -293,6 +293,7 @@ async function PollRepoIssues(
       issueNumber: issue.number,
       issueTitle: issue.title,
       issueUrl: issue.html_url,
+      requestingUser,
     };
 
     // Issue の内容をプロンプトとして使用

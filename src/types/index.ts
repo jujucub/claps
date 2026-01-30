@@ -29,6 +29,7 @@ export interface GitHubTaskMetadata {
   readonly issueNumber: number;
   readonly issueTitle: string;
   readonly issueUrl: string;
+  readonly requestingUser?: string; // [sumomo]タグを投稿したGitHubユーザー
   slackThreadTs?: string; // Issue用のSlackスレッド
 }
 
@@ -100,11 +101,19 @@ export interface AllowedUsers {
   readonly slack: readonly string[];   // SlackユーザーID
 }
 
+// ユーザーマッピング（GitHubユーザー名 <-> SlackユーザーID）
+export interface UserMapping {
+  github: string;
+  slack: string;
+}
+
 // 管理UI用設定
 export interface AdminConfig {
   allowedGithubUsers: string[];
   allowedSlackUsers: string[];
   githubRepos: string[];
+  userMappings: UserMapping[];
+  adminSlackUser: string;
 }
 
 // 設定

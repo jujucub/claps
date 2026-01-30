@@ -10,7 +10,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { fileURLToPath } from 'url';
-import type { AdminConfig } from '../types/index.js';
+import type { AdminConfig, UserMapping } from '../types/index.js';
 import { GetAdminConfig, SaveAdminConfig, OnConfigChange } from './store.js';
 import { UpdateAllowedUsers as UpdateSlackAllowedUsers } from '../slack/handlers.js';
 import { UpdateAllowedUsers as UpdateGitHubAllowedUsers, UpdateRepos } from '../github/poller.js';
@@ -150,6 +150,30 @@ export function InitAdminServer(): Express {
         return arr.map((s) => s.trim()).filter((s) => s !== '');
       };
 
+      // UserMapping配列の検証
+      const isUserMappingArray = (arr: unknown): arr is UserMapping[] => {
+        return (
+          Array.isArray(arr) &&
+          arr.every(
+            (item) =>
+              typeof item === 'object' &&
+              item !== null &&
+              typeof item.github === 'string' &&
+              typeof item.slack === 'string'
+          )
+        );
+      };
+
+      // UserMapping配列を正規化
+      const normalizeUserMappings = (arr: UserMapping[]): UserMapping[] => {
+        return arr
+          .map((m) => ({
+            github: m.github.trim(),
+            slack: m.slack.trim(),
+          }))
+          .filter((m) => m.github !== '' && m.slack !== '');
+      };
+
       // 現在の設定とマージ（入力値バリデーション付き）
       const updatedConfig: AdminConfig = {
         allowedGithubUsers: isStringArray(newConfig.allowedGithubUsers)
@@ -161,6 +185,13 @@ export function InitAdminServer(): Express {
         githubRepos: isStringArray(newConfig.githubRepos)
           ? normalizeStringArray(newConfig.githubRepos)
           : currentConfig.githubRepos,
+        userMappings: isUserMappingArray(newConfig.userMappings)
+          ? normalizeUserMappings(newConfig.userMappings)
+          : currentConfig.userMappings,
+        adminSlackUser:
+          typeof newConfig.adminSlackUser === 'string'
+            ? newConfig.adminSlackUser.trim()
+            : currentConfig.adminSlackUser,
       };
 
       // 保存（コールバックで各モジュールに通知される）

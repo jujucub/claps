@@ -81,6 +81,7 @@ function AuthMiddleware(req: Request, res: Response, next: NextFunction): void {
 // 現在のタスクID（承認リクエストに紐付ける）
 let _currentTaskId: string | undefined;
 let _currentThreadTs: string | undefined;
+let _currentRequestedBySlackId: string | undefined;
 
 // 現在のタスクで許可されたツール（同じタスク内では自動許可）
 const _allowedToolsForTask = new Set<string>();
@@ -284,7 +285,8 @@ async function HandleApprovalRequest(hookInput: HookInput): Promise<HookOutput> 
       taskId,
       tool_name,
       command,
-      _currentThreadTs
+      _currentThreadTs,
+      _currentRequestedBySlackId
     );
 
     let message = result.decision === 'allow' ? 'Approved by user' : 'Denied by user';
@@ -368,9 +370,14 @@ function FormatCommand(
 /**
  * 現在のタスクIDを設定する
  */
-export function SetCurrentTaskId(taskId: string, threadTs?: string): void {
+export function SetCurrentTaskId(
+  taskId: string,
+  threadTs?: string,
+  requestedBySlackId?: string
+): void {
   _currentTaskId = taskId;
   _currentThreadTs = threadTs;
+  _currentRequestedBySlackId = requestedBySlackId;
   // 新しいタスクでは許可済みツールをリセット
   _allowedToolsForTask.clear();
 }
@@ -381,6 +388,7 @@ export function SetCurrentTaskId(taskId: string, threadTs?: string): void {
 export function ClearCurrentTaskId(): void {
   _currentTaskId = undefined;
   _currentThreadTs = undefined;
+  _currentRequestedBySlackId = undefined;
   _allowedToolsForTask.clear();
   _autoApproveCounter.clear();
 }

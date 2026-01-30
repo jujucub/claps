@@ -8,6 +8,8 @@ let config = {
   allowedGithubUsers: [],
   allowedSlackUsers: [],
   githubRepos: [],
+  userMappings: [],
+  adminSlackUser: '',
 };
 
 // 初期化
@@ -145,6 +147,8 @@ function renderAll() {
   renderList('github-users-list', config.allowedGithubUsers, removeGithubUser);
   renderList('slack-users-list', config.allowedSlackUsers, removeSlackUser);
   renderList('github-repos-list', config.githubRepos, removeGithubRepo);
+  renderMappingsList();
+  renderAdminSlackUser();
 }
 
 /**
@@ -361,6 +365,154 @@ async function removeGithubRepo(index) {
       removed,
       ...config.githubRepos.slice(index),
     ];
+    renderAll();
+  }
+}
+
+// === ユーザーマッピング ===
+
+/**
+ * マッピングリストを描画
+ */
+function renderMappingsList() {
+  const list = document.getElementById('user-mappings-list');
+  list.innerHTML = '';
+
+  if (!config.userMappings || config.userMappings.length === 0) {
+    const emptyLi = document.createElement('li');
+    emptyLi.className = 'empty-message';
+    emptyLi.textContent = '登録されていません';
+    list.appendChild(emptyLi);
+    return;
+  }
+
+  config.userMappings.forEach((mapping, index) => {
+    const li = document.createElement('li');
+
+    const span = document.createElement('span');
+    span.className = 'item-name';
+    span.textContent = `${mapping.github} → ${mapping.slack}`;
+
+    const button = document.createElement('button');
+    button.className = 'danger';
+    button.textContent = '削除';
+    button.addEventListener('click', () => removeUserMapping(index));
+
+    li.appendChild(span);
+    li.appendChild(button);
+    list.appendChild(li);
+  });
+}
+
+/**
+ * ユーザーマッピングを追加
+ */
+async function addUserMapping() {
+  const githubInput = document.getElementById('mapping-github-input');
+  const slackInput = document.getElementById('mapping-slack-input');
+  const github = githubInput.value.trim();
+  const slack = slackInput.value.trim();
+
+  if (!github || !slack) {
+    alert('GitHubユーザー名とSlackユーザーIDを両方入力してください');
+    return;
+  }
+
+  // GitHubユーザー名の検証
+  if (!/^[a-zA-Z0-9]([a-zA-Z0-9-]{0,37}[a-zA-Z0-9])?$/.test(github)) {
+    alert('無効なGitHubユーザー名です');
+    return;
+  }
+
+  // SlackユーザーIDの検証
+  if (!/^U[A-Z0-9]{8,11}$/.test(slack)) {
+    alert('無効なSlackユーザーIDです。形式: U12345678');
+    return;
+  }
+
+  // 既に同じGitHubユーザーがマッピングされているかチェック
+  if (config.userMappings.some((m) => m.github.toLowerCase() === github.toLowerCase())) {
+    alert('このGitHubユーザーは既にマッピングされています');
+    return;
+  }
+
+  config.userMappings = [...config.userMappings, { github, slack }];
+  githubInput.value = '';
+  slackInput.value = '';
+
+  try {
+    await saveConfig();
+  } catch (error) {
+    alert(error.message);
+    config.userMappings = config.userMappings.filter(
+      (m) => !(m.github === github && m.slack === slack)
+    );
+    renderAll();
+  }
+}
+
+/**
+ * ユーザーマッピングを削除
+ */
+async function removeUserMapping(index) {
+  const removed = config.userMappings[index];
+  config.userMappings = config.userMappings.filter((_, i) => i !== index);
+
+  try {
+    await saveConfig();
+  } catch (error) {
+    alert(error.message);
+    config.userMappings = [
+      ...config.userMappings.slice(0, index),
+      removed,
+      ...config.userMappings.slice(index),
+    ];
+    renderAll();
+  }
+}
+
+// === 管理者設定 ===
+
+/**
+ * 管理者SlackユーザーIDを表示
+ */
+function renderAdminSlackUser() {
+  const display = document.getElementById('admin-slack-user-display');
+  const input = document.getElementById('admin-slack-user-input');
+
+  if (config.adminSlackUser) {
+    display.textContent = `現在の設定: ${config.adminSlackUser}`;
+    input.value = config.adminSlackUser;
+  } else {
+    display.textContent = '未設定';
+    input.value = '';
+  }
+}
+
+/**
+ * 管理者SlackユーザーIDを保存
+ */
+async function saveAdminSlackUser() {
+  const input = document.getElementById('admin-slack-user-input');
+  const value = input.value.trim();
+
+  // 空の場合はクリア
+  if (!value) {
+    config.adminSlackUser = '';
+  } else {
+    // SlackユーザーIDの検証
+    if (!/^U[A-Z0-9]{8,11}$/.test(value)) {
+      alert('無効なSlackユーザーIDです。形式: U12345678');
+      return;
+    }
+    config.adminSlackUser = value;
+  }
+
+  try {
+    await saveConfig();
+    alert('管理者設定を保存しました');
+  } catch (error) {
+    alert(error.message);
     renderAll();
   }
 }
