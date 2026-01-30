@@ -127,17 +127,14 @@ export class ClaudeRunner {
       args.push('--output-format', 'json');
 
       // Claude CLI を起動
-      // CLAUDE_PROJECT_DIR を設定して、親ディレクトリの設定を使用
-      const projectDir = process.cwd(); // sumomo本体のディレクトリ
+      // CLAUDE_PROJECT_DIR は設定しない（cwdがそのままプロジェクトディレクトリとして使われる）
+      // これにより、worktree側のCLAUDE.mdや.claude/設定が読み込まれる
       const claudeProcess = spawn(
         'claude',
         args,
         {
           cwd: options.workingDirectory,
-          env: {
-            ...process.env,
-            CLAUDE_PROJECT_DIR: projectDir,
-          },
+          env: process.env,
           stdio: ['pipe', 'pipe', 'pipe'],
           shell: false,
         }

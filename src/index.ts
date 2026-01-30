@@ -41,12 +41,18 @@ import {
   GetOrCreateWorktree,
   RemoveWorktree,
 } from './git/worktree.js';
+import { GetOrCloneRepo } from './git/repo.js';
 import { CleanupAllSessions } from './tmux/session.js';
 import {
   InitAdminServer,
   StartAdminServer,
   StopAdminServer,
 } from './admin/server.js';
+import {
+  GetSlackUserForGitHub,
+  GetAdminSlackUser,
+} from './admin/store.js';
+import { SetupGlobalMcpConfig } from './mcp/setup.js';
 
 // アプリケーション状態
 let _isRunning = false;
@@ -63,6 +69,9 @@ async function Start(): Promise<void> {
 
   // 設定を読み込む
   _config = LoadConfig();
+
+  // MCP設定をセットアップ（~/.claude.jsonに追加）
+  SetupGlobalMcpConfig();
 
   // コンポーネントを初期化
   _taskQueue = GetTaskQueue();
@@ -218,9 +227,10 @@ async function ProcessNextTask(): Promise<void> {
 
   _isProcessing = true;
   const threadTs = GetThreadTs(task);
-  SetCurrentTaskId(task.id, threadTs);
+  const requestedBySlackId = GetRequestedBySlackId(task);
+  SetCurrentTaskId(task.id, threadTs, requestedBySlackId);
 
-  console.log(`Processing task: ${task.id}`);
+  console.log(`Processing task: ${task.id} (requestedBy: ${requestedBySlackId ?? 'none'})`);
 
   try {
     let result: { success: boolean; output: string; prUrl?: string; error?: string };
@@ -355,9 +365,16 @@ async function ProcessSlackAsIssueTask(
   const sessionStore = GetSessionStore();
 
   try {
+    // リポジトリをクローン（または更新）
+    const repoPath = await GetOrCloneRepo(
+      issueInfo.owner,
+      issueInfo.repo,
+      _config.githubToken
+    );
+
     // 既存の worktree を取得（なければ作成）
     const { worktreeInfo, isExisting } = await GetOrCreateWorktree(
-      process.cwd(),
+      repoPath,
       issueInfo.owner,
       issueInfo.repo,
       issueInfo.issueNumber
@@ -488,11 +505,15 @@ async function ProcessGitHubTask(
   const sessionStore = GetSessionStore();
 
   try {
+    // リポジトリをクローン（または更新）
+    console.log(`Getting or cloning repo ${meta.owner}/${meta.repo}...`);
+    const repoPath = await GetOrCloneRepo(meta.owner, meta.repo, _config.githubToken);
+
     // 既存の worktree があれば再利用、なければ新規作成
     console.log(`Getting or creating worktree for issue #${meta.issueNumber}...`);
 
     const { worktreeInfo, isExisting } = await GetOrCreateWorktree(
-      process.cwd(),
+      repoPath,
       meta.owner,
       meta.repo,
       meta.issueNumber
@@ -710,6 +731,31 @@ function GetThreadTs(task: Task): string | undefined {
   if (task.metadata.source === 'github') {
     return task.metadata.slackThreadTs;
   }
+  return undefined;
+}
+
+/**
+ * タスクから承認権限を持つSlackユーザーIDを取得する
+ */
+function GetRequestedBySlackId(task: Task): string | undefined {
+  if (task.metadata.source === 'slack') {
+    // Slackからのリクエストはそのユーザーが承認権限を持つ
+    return task.metadata.userId;
+  }
+
+  if (task.metadata.source === 'github') {
+    // GitHubからのリクエストはマッピングから解決
+    const githubUser = task.metadata.requestingUser;
+    if (githubUser) {
+      const slackUserId = GetSlackUserForGitHub(githubUser);
+      if (slackUserId) {
+        return slackUserId;
+      }
+    }
+    // マッピングがない場合は管理者に通知
+    return GetAdminSlackUser();
+  }
+
   return undefined;
 }
 
