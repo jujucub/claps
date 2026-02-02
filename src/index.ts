@@ -6,7 +6,7 @@
 import { LoadConfig } from './config.js';
 import type { Config, GitHubTaskMetadata, SlackTaskMetadata, Task } from './types/index.js';
 import { GetTaskQueue, type TaskQueue } from './queue/taskQueue.js';
-import { GetClaudeRunner, type ClaudeRunner } from './claude/runner.js';
+import { GetClaudeRunner, type ClaudeRunner, type WorkLog } from './claude/runner.js';
 import { GetSessionStore } from './session/store.js';
 import {
   InitSlackBot,
@@ -19,6 +19,7 @@ import {
   NotifyTaskCompleted,
   NotifyError,
   NotifyProgress,
+  NotifyWorkLog,
   CreateIssueThread,
 } from './slack/handlers.js';
 import {
@@ -52,6 +53,9 @@ import {
   GetAdminSlackUser,
 } from './admin/store.js';
 import { SetupGlobalMcpConfig } from './mcp/setup.js';
+
+// 作業ログの投稿間隔（ミリ秒）
+const WORK_LOG_INTERVAL_MS = 10000;
 
 // アプリケーション状態
 let _isRunning = false;
@@ -250,7 +254,17 @@ async function ProcessNextTask(): Promise<void> {
         // Issue用スレッドの場合: Issueのセッションとworktreeを使用
         console.log(`Thread ${slackMeta.threadTs} is linked to issue #${linkedIssue.issueNumber}`);
         result = await ProcessSlackAsIssueTask(task, linkedIssue);
+      } else if (slackMeta.targetRepo) {
+        // targetRepoが指定されている場合: そのリポジトリのworktreeで作業
+        console.log(`Processing with target repo: ${slackMeta.targetRepo}`);
+        result = await ProcessSlackWithTargetRepo(task, slackMeta.targetRepo);
       } else {
+        // スレッドにtargetRepoが紐づいているかチェック（スラッシュコマンドで開始したスレッド）
+        const linkedTargetRepo = sessionStore.GetTargetRepoForThread(slackMeta.threadTs);
+        if (linkedTargetRepo) {
+          console.log(`Thread ${slackMeta.threadTs} is linked to target repo: ${linkedTargetRepo}`);
+          result = await ProcessSlackWithTargetRepo(task, linkedTargetRepo);
+        } else {
         // 通常のSlackタスク
         // 同じスレッドの既存セッションを取得
         const existingSessionId = sessionStore.Get(slackMeta.threadTs, slackMeta.userId);
@@ -260,29 +274,27 @@ async function ProcessNextTask(): Promise<void> {
           console.log(`Creating new session for thread ${slackMeta.threadTs}`);
         }
 
-        let lastPostTime = 0;
-        let outputBuffer = '';
-        const postInterval = 3000;
+        // 作業ログを Slack に投稿するコールバック
+        let lastWorkLogTime = 0;
 
-        const onOutput = async (chunk: string, _type: 'stdout' | 'stderr') => {
-          outputBuffer += chunk;
+        const onWorkLog = async (log: WorkLog) => {
           const now = Date.now();
+          if (log.type !== 'error' && log.type !== 'approval_pending') {
+            if (now - lastWorkLogTime < WORK_LOG_INTERVAL_MS) return;
+          }
+          lastWorkLogTime = now;
 
-          if (now - lastPostTime >= postInterval && outputBuffer.trim()) {
-            lastPostTime = now;
-            const message = outputBuffer.slice(0, 1500);
-            outputBuffer = '';
-
-            try {
-              await NotifyProgress(
-                slackApp,
-                _config!.slackChannelId,
-                `\`\`\`\n${message}\n\`\`\``,
-                slackMeta.threadTs
-              );
-            } catch (e) {
-              console.error('Failed to post to Slack:', e);
-            }
+          try {
+            await NotifyWorkLog(
+              slackApp,
+              _config!.slackChannelId,
+              log.type,
+              log.message,
+              log.details,
+              slackMeta.threadTs
+            );
+          } catch (e) {
+            console.error('Failed to post work log to Slack:', e);
           }
         };
 
@@ -296,7 +308,7 @@ async function ProcessNextTask(): Promise<void> {
 
         const runResult = await _claudeRunner.Run(task.id, promptWithContext, {
           workingDirectory: process.cwd(),
-          onOutput,
+          onWorkLog,
           resumeSessionId: existingSessionId,
         });
 
@@ -306,21 +318,8 @@ async function ProcessNextTask(): Promise<void> {
           console.log(`Session saved for thread ${slackMeta.threadTs}: ${runResult.sessionId}`);
         }
 
-        // 残りのバッファを投稿
-        if (outputBuffer.trim()) {
-          try {
-            await NotifyProgress(
-              slackApp,
-              _config!.slackChannelId,
-              `\`\`\`\n${outputBuffer.slice(0, 1500)}\n\`\`\``,
-              slackMeta.threadTs
-            );
-          } catch (e) {
-            console.error('Failed to post final output to Slack:', e);
-          }
-        }
-
         result = runResult;
+        }
       }
     }
 
@@ -408,30 +407,27 @@ async function ProcessSlackAsIssueTask(
       console.log(`Creating new session for issue #${issueInfo.issueNumber}`);
     }
 
-    // 出力コールバック
-    let lastPostTime = 0;
-    let outputBuffer = '';
-    const postInterval = 3000;
+    // 作業ログを Slack に投稿するコールバック
+    let lastWorkLogTime = 0;
 
-    const onOutput = async (chunk: string, _type: 'stdout' | 'stderr') => {
-      outputBuffer += chunk;
+    const onWorkLog = async (log: WorkLog) => {
       const now = Date.now();
+      if (log.type !== 'error' && log.type !== 'approval_pending') {
+        if (now - lastWorkLogTime < WORK_LOG_INTERVAL_MS) return;
+      }
+      lastWorkLogTime = now;
 
-      if (now - lastPostTime >= postInterval && outputBuffer.trim()) {
-        lastPostTime = now;
-        const message = outputBuffer.slice(0, 1500);
-        outputBuffer = '';
-
-        try {
-          await NotifyProgress(
-            slackApp,
-            _config!.slackChannelId,
-            `\`\`\`\n${message}\n\`\`\``,
-            slackMeta.threadTs
-          );
-        } catch (e) {
-          console.error('Failed to post to Slack:', e);
-        }
+      try {
+        await NotifyWorkLog(
+          slackApp,
+          _config!.slackChannelId,
+          log.type,
+          log.message,
+          log.details,
+          slackMeta.threadTs
+        );
+      } catch (e) {
+        console.error('Failed to post work log to Slack:', e);
       }
     };
 
@@ -444,7 +440,7 @@ async function ProcessSlackAsIssueTask(
     );
     const runResult = await _claudeRunner.Run(task.id, promptWithContext, {
       workingDirectory: worktreeInfo.worktreePath,
-      onOutput,
+      onWorkLog,
       resumeSessionId: existingSessionId,
     });
 
@@ -457,20 +453,6 @@ async function ProcessSlackAsIssueTask(
         runResult.sessionId
       );
       console.log(`Session saved for issue #${issueInfo.issueNumber}: ${runResult.sessionId}`);
-    }
-
-    // 残りのバッファを投稿
-    if (outputBuffer.trim()) {
-      try {
-        await NotifyProgress(
-          slackApp,
-          _config.slackChannelId,
-          `\`\`\`\n${outputBuffer.slice(0, 1500)}\n\`\`\``,
-          slackMeta.threadTs
-        );
-      } catch (e) {
-        console.error('Failed to post final output to Slack:', e);
-      }
     }
 
     // 変更があればコミット＆プッシュ
@@ -494,6 +476,132 @@ async function ProcessSlackAsIssueTask(
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     console.error(`ProcessSlackAsIssueTask error: ${errorMessage}`);
+    return {
+      success: false,
+      output: '',
+      error: errorMessage,
+    };
+  }
+}
+
+/**
+ * 指定されたリポジトリのworktreeでSlackタスクを処理する
+ */
+async function ProcessSlackWithTargetRepo(
+  task: Task,
+  targetRepo: string
+): Promise<{ success: boolean; output: string; prUrl?: string; error?: string }> {
+  if (!_config || !_claudeRunner) {
+    return { success: false, output: '', error: 'Not initialized' };
+  }
+
+  const slackMeta = task.metadata as SlackTaskMetadata;
+  const slackApp = GetSlackBot();
+  const sessionStore = GetSessionStore();
+
+  // owner/repo を分離（バリデーション済みなので必ず2要素）
+  const parts = targetRepo.split('/');
+  const owner = parts[0] as string;
+  const repo = parts[1] as string;
+
+  try {
+    // リポジトリをクローン（または更新）
+    console.log(`Getting or cloning repo ${targetRepo}...`);
+    const repoPath = await GetOrCloneRepo(owner, repo, _config.githubToken);
+
+    // スレッドにtargetRepoを紐づける（同じスレッドでのメンションも同じworktreeで作業するため）
+    sessionStore.LinkThreadToTargetRepo(slackMeta.threadTs, targetRepo);
+
+    // スレッドIDからworktree用の識別子を生成（短いハッシュ）
+    const threadHash = slackMeta.threadTs.replace('.', '').slice(-8);
+    const worktreeIdentifier = parseInt(threadHash, 10) || Date.now();
+
+    // worktree を取得または作成
+    const { worktreeInfo, isExisting } = await GetOrCreateWorktree(
+      repoPath,
+      owner,
+      repo,
+      worktreeIdentifier
+    );
+
+    if (isExisting) {
+      await NotifyProgress(
+        slackApp,
+        _config.slackChannelId,
+        `既存のブランチ \`${worktreeInfo.branchName}\` で作業を継続するのでーす！`,
+        slackMeta.threadTs
+      );
+    } else {
+      await NotifyProgress(
+        slackApp,
+        _config.slackChannelId,
+        `ブランチ \`${worktreeInfo.branchName}\` で作業を開始するのです！`,
+        slackMeta.threadTs
+      );
+    }
+
+    // セッションを取得（スレッド+ユーザー単位）
+    const existingSessionId = sessionStore.Get(slackMeta.threadTs, slackMeta.userId);
+    if (existingSessionId) {
+      console.log(`Resuming existing session: ${existingSessionId}`);
+    } else {
+      console.log(`Creating new session for thread ${slackMeta.threadTs}`);
+    }
+
+    // 作業ログを Slack に投稿するコールバック
+    let lastWorkLogTime = 0;
+
+    const onWorkLog = async (log: WorkLog) => {
+      const now = Date.now();
+      if (log.type !== 'error' && log.type !== 'approval_pending') {
+        if (now - lastWorkLogTime < WORK_LOG_INTERVAL_MS) return;
+      }
+      lastWorkLogTime = now;
+
+      try {
+        await NotifyWorkLog(
+          slackApp,
+          _config!.slackChannelId,
+          log.type,
+          log.message,
+          log.details,
+          slackMeta.threadTs
+        );
+      } catch (e) {
+        console.error('Failed to post work log to Slack:', e);
+      }
+    };
+
+    // コンテキストをプロンプトに追加
+    const promptWithContext = task.prompt + BuildSlackRepoContext(
+      slackMeta.userId,
+      slackMeta.channelId,
+      slackMeta.threadTs,
+      targetRepo,
+      worktreeInfo.branchName
+    );
+
+    const runResult = await _claudeRunner.Run(task.id, promptWithContext, {
+      workingDirectory: worktreeInfo.worktreePath,
+      onWorkLog,
+      resumeSessionId: existingSessionId,
+    });
+
+    // セッションIDを保存
+    if (runResult.sessionId) {
+      sessionStore.Set(slackMeta.threadTs, slackMeta.userId, runResult.sessionId);
+      console.log(`Session saved for thread ${slackMeta.threadTs}: ${runResult.sessionId}`);
+    }
+
+    return {
+      success: runResult.success,
+      output: runResult.output,
+      prUrl: runResult.prUrl,
+      error: runResult.error,
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`ProcessSlackWithTargetRepo error: ${errorMessage}`);
     return {
       success: false,
       output: '',
@@ -572,37 +680,35 @@ async function ProcessGitHubTask(
 
     await NotifyProgress(slackApp, _config.slackChannelId, 'Claude を起動中なのでーす！', threadTs);
 
-    // 出力を Slack に投稿するコールバック
-    let lastPostTime = 0;
-    let outputBuffer = '';
-    const postInterval = 3000;
+    // 作業ログを Slack に投稿するコールバック
+    let lastWorkLogTime = 0;
 
-    const onOutput = async (chunk: string, _type: 'stdout' | 'stderr') => {
-      outputBuffer += chunk;
+    const onWorkLog = async (log: WorkLog) => {
       const now = Date.now();
+      // レート制限（エラーと承認待ちは即時投稿）
+      if (log.type !== 'error' && log.type !== 'approval_pending') {
+        if (now - lastWorkLogTime < WORK_LOG_INTERVAL_MS) return;
+      }
+      lastWorkLogTime = now;
 
-      if (now - lastPostTime >= postInterval && outputBuffer.trim()) {
-        lastPostTime = now;
-        const message = outputBuffer.slice(0, 1500);
-        outputBuffer = '';
-
-        try {
-          await NotifyProgress(
-            slackApp,
-            _config!.slackChannelId,
-            `\`\`\`\n${message}\n\`\`\``,
-            threadTs
-          );
-        } catch (e) {
-          console.error('Failed to post to Slack:', e);
-        }
+      try {
+        await NotifyWorkLog(
+          slackApp,
+          _config!.slackChannelId,
+          log.type,
+          log.message,
+          log.details,
+          threadTs
+        );
+      } catch (e) {
+        console.error('Failed to post work log to Slack:', e);
       }
     };
 
     // Claude CLI を実行（非対話モード + セッション継続）
     const runResult = await _claudeRunner.Run(task.id, worktreePrompt, {
       workingDirectory: worktreeInfo.worktreePath,
-      onOutput,
+      onWorkLog,
       resumeSessionId: existingSessionId,
     });
 
@@ -610,20 +716,6 @@ async function ProcessGitHubTask(
     if (runResult.sessionId) {
       sessionStore.SetForIssue(meta.owner, meta.repo, meta.issueNumber, runResult.sessionId);
       console.log(`Session saved for issue #${meta.issueNumber}: ${runResult.sessionId}`);
-    }
-
-    // 残りのバッファを投稿
-    if (outputBuffer.trim()) {
-      try {
-        await NotifyProgress(
-          slackApp,
-          _config.slackChannelId,
-          `\`\`\`\n${outputBuffer.slice(0, 1500)}\n\`\`\``,
-          threadTs
-        );
-      } catch (e) {
-        console.error('Failed to post final output to Slack:', e);
-      }
     }
 
     // Claude CLIの結果をそのまま返す（コミット・PR作成はLLMが判断して実行）
@@ -730,6 +822,34 @@ Slackコンテキスト情報:
 
 監視対象GitHubリポジトリ:
 ${reposList}
+---`;
+}
+
+/**
+ * 指定リポジトリでのSlackコンテキスト情報をプロンプトに追加する
+ */
+function BuildSlackRepoContext(
+  userId: string,
+  channelId: string,
+  threadTs: string,
+  targetRepo: string,
+  branchName: string
+): string {
+  return `
+---
+Slackコンテキスト情報:
+- Channel ID: ${channelId}
+- Thread TS: ${threadTs}
+- User ID: ${userId}
+- このユーザーへの返信は <@${userId}> でメンションできます
+
+作業リポジトリ:
+- リポジトリ: ${targetRepo}
+- 作業ブランチ: ${branchName}
+
+目標:
+- リクエストされた内容を実装してください
+- 実装が完了したら、コミットしてPull Requestを作成してください
 ---`;
 }
 

@@ -61,6 +61,16 @@ const _pendingApprovals = new Map<string, PendingApproval>();
 const _pendingQuestions = new Map<string, PendingQuestion>();
 
 /**
+ * リポジトリ形式 (owner/repo) を検証する
+ */
+function IsValidRepoFormat(repo: string): boolean {
+  const parts = repo.split('/');
+  const owner = parts[0];
+  const repoName = parts[1];
+  return parts.length === 2 && !!owner && owner.length > 0 && !!repoName && repoName.length > 0;
+}
+
+/**
  * Slack ハンドラーを登録する
  */
 export function RegisterSlackHandlers(
@@ -71,6 +81,100 @@ export function RegisterSlackHandlers(
 ): void {
   // ホワイトリストを保存
   _allowedUsers = allowedUsers;
+
+  // /sumomo スラッシュコマンドの処理
+  app.command('/sumomo', async ({ command, ack, respond }) => {
+    await ack();
+
+    const userId = command.user_id;
+
+    // ホワイトリストチェック
+    if (!IsUserAllowed(userId)) {
+      console.log(`Denied Slack command from ${userId} (not in whitelist)`);
+      await respond({
+        response_type: 'ephemeral',
+        text: 'このコマンドを使用する権限がないのです。',
+      });
+      return;
+    }
+
+    const text = command.text.trim();
+
+    // 使い方を表示
+    if (!text || text === 'help') {
+      await respond({
+        response_type: 'ephemeral',
+        text: `🍑 *すももコマンドの使い方*
+
+\`/sumomo owner/repo メッセージ\`
+→ 指定したリポジトリの環境でClaudeを実行
+
+*例:*
+\`/sumomo h-sato/my-project バグを修正して\`
+\`/sumomo my-org/frontend ボタンのスタイルを変更して\`
+
+リポジトリは監視対象でなくても使用できます。`,
+      });
+      return;
+    }
+
+    // owner/repo とメッセージを分離
+    const parts = text.split(/\s+/);
+    const firstPart = parts[0] ?? '';
+
+    if (!IsValidRepoFormat(firstPart)) {
+      await respond({
+        response_type: 'ephemeral',
+        text: `🍑 リポジトリの形式が正しくないのです。\n\n使い方: \`/sumomo owner/repo メッセージ\`\n例: \`/sumomo h-sato/my-project バグを修正して\``,
+      });
+      return;
+    }
+
+    const targetRepo = firstPart;
+    const prompt = parts.slice(1).join(' ').trim();
+
+    if (!prompt) {
+      await respond({
+        response_type: 'ephemeral',
+        text: '🍑 メッセージを入力してくださいなのです！\n\n例: `/sumomo owner/repo バグを修正して`',
+      });
+      return;
+    }
+
+    // チャンネルに開始通知を投稿（スレッドの起点となる）
+    const startMessage = await app.client.chat.postMessage({
+      channel: command.channel_id,
+      text: `🍑 あいっ！\`${targetRepo}\` で処理を開始するのでーす！`,
+      blocks: [
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: `🍑 *すももコマンド実行*\nリポジトリ: \`${targetRepo}\`\nリクエスト: ${prompt.slice(0, 100)}${prompt.length > 100 ? '...' : ''}\n実行者: <@${userId}>`,
+          },
+        },
+      ],
+    });
+
+    const threadTs = startMessage.ts ?? '';
+
+    const metadata: SlackTaskMetadata = {
+      source: 'slack',
+      channelId: command.channel_id,
+      threadTs,
+      userId,
+      messageText: text,
+      targetRepo,
+    };
+
+    await onMention(metadata, prompt);
+
+    // ephemeral レスポンス
+    await respond({
+      response_type: 'ephemeral',
+      text: `🍑 \`${targetRepo}\` で処理を開始したのでーす！スレッドで進捗を確認できます。`,
+    });
+  });
 
   // @sumomo メンションの処理
   app.event('app_mention', async ({ event, say }) => {
@@ -695,6 +799,42 @@ export async function NotifyProgress(
   await app.client.chat.postMessage({
     channel: channelId,
     text: `🍑 ${message}`,
+    thread_ts: threadTs,
+  });
+}
+
+/**
+ * 作業ログを通知する（ツール使用状況など）
+ */
+export async function NotifyWorkLog(
+  app: App,
+  channelId: string,
+  logType: 'tool_start' | 'tool_end' | 'thinking' | 'text' | 'error' | 'approval_pending',
+  message: string,
+  details?: string,
+  threadTs?: string
+): Promise<void> {
+  // ログタイプに応じた絵文字を選択
+  const emoji: Record<string, string> = {
+    tool_start: '🔧',
+    tool_end: '✅',
+    thinking: '🤔',
+    text: '💬',
+    error: '❌',
+    approval_pending: '⏳',
+  };
+
+  const icon = emoji[logType] ?? '📋';
+
+  // 詳細がある場合はフォーマット
+  let text = `${icon} ${message}`;
+  if (details) {
+    text += `\n\`${details.slice(0, 100)}${details.length > 100 ? '...' : ''}\``;
+  }
+
+  await app.client.chat.postMessage({
+    channel: channelId,
+    text,
     thread_ts: threadTs,
   });
 }

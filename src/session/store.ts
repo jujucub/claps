@@ -28,11 +28,13 @@ type SessionKey = string;
 class SessionStore {
   private _sessions: Map<SessionKey, SessionInfo>;
   private _threadToIssue: Map<string, IssueInfo>; // threadTs -> IssueInfo
+  private _threadToTargetRepo: Map<string, string>; // threadTs -> targetRepo (owner/repo)
   private readonly _maxAge: number; // セッションの最大有効期間（ミリ秒）
 
   constructor(maxAgeHours: number = 24) {
     this._sessions = new Map();
     this._threadToIssue = new Map();
+    this._threadToTargetRepo = new Map();
     this._maxAge = maxAgeHours * 60 * 60 * 1000;
   }
 
@@ -159,6 +161,21 @@ class SessionStore {
         break;
       }
     }
+  }
+
+  /**
+   * Slackスレッドにターゲットリポジトリを紐付ける
+   */
+  LinkThreadToTargetRepo(threadTs: string, targetRepo: string): void {
+    this._threadToTargetRepo.set(threadTs, targetRepo);
+    console.log(`Thread ${threadTs} linked to target repo ${targetRepo}`);
+  }
+
+  /**
+   * Slackスレッドからターゲットリポジトリを取得
+   */
+  GetTargetRepoForThread(threadTs: string): string | undefined {
+    return this._threadToTargetRepo.get(threadTs);
   }
 
   /**

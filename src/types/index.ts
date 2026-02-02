@@ -40,6 +40,7 @@ export interface SlackTaskMetadata {
   readonly threadTs: string;
   readonly userId: string;
   readonly messageText: string;
+  readonly targetRepo?: string; // owner/repo 形式。指定されたリポジトリのworktreeで作業
 }
 
 export type TaskMetadata = GitHubTaskMetadata | SlackTaskMetadata;

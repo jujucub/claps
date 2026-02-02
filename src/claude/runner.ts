@@ -8,12 +8,22 @@ import { spawn, type ChildProcess } from 'child_process';
 // 出力コールバック
 export type OutputCallback = (chunk: string, type: 'stdout' | 'stderr') => void;
 
+// 作業ログ（ツール使用やステータス変更を通知）
+export interface WorkLog {
+  readonly type: 'tool_start' | 'tool_end' | 'thinking' | 'text' | 'error' | 'approval_pending';
+  readonly tool?: string;
+  readonly message: string;
+  readonly details?: string;
+}
+export type WorkLogCallback = (log: WorkLog) => void;
+
 // 実行オプション
 export interface RunnerOptions {
   readonly workingDirectory: string;
   readonly timeout?: number;
   readonly maxOutputSize?: number;
   readonly onOutput?: OutputCallback;
+  readonly onWorkLog?: WorkLogCallback; // 作業ログコールバック
   readonly resumeSessionId?: string; // 継続するセッションID
   readonly systemPrompt?: string; // カスタムシステムプロンプト
 }
@@ -123,8 +133,8 @@ export class ClaudeRunner {
       // プロンプトを追加
       args.push('-p', prompt);
 
-      // セッションIDを取得するためにJSON出力を使用
-      args.push('--output-format', 'json');
+      // ストリーミングJSON出力でリアルタイムにイベントを取得
+      args.push('--output-format', 'stream-json');
 
       // Claude CLI を起動
       // CLAUDE_PROJECT_DIR を明示的に設定してworktree側の.claude/設定を使用する
@@ -169,13 +179,32 @@ export class ClaudeRunner {
         }
       }, timeout);
 
-      // 標準出力
+      // 標準出力（ストリーミングJSONをパース）
+      let lineBuffer = '';
       claudeProcess.stdout?.on('data', (data: Buffer) => {
         const chunk = data.toString();
         console.log(`Claude stdout: ${chunk.slice(0, 200)}`);
         if (stdout.length < maxOutputSize) {
           stdout += chunk;
         }
+
+        // ストリーミングJSONをパースして作業ログを抽出
+        lineBuffer += chunk;
+        const lines = lineBuffer.split('\n');
+        lineBuffer = lines.pop() ?? ''; // 最後の不完全な行を保持
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+
+          try {
+            const json = JSON.parse(trimmed);
+            this._processStreamEvent(json, options.onWorkLog);
+          } catch {
+            // JSONでない行は無視
+          }
+        }
+
         // コールバックを呼び出し
         if (options.onOutput) {
           options.onOutput(chunk, 'stdout');
@@ -326,6 +355,125 @@ export class ClaudeRunner {
       return true;
     }
     return false;
+  }
+
+  /**
+   * ストリーミングイベントを処理して作業ログを生成する
+   */
+  private _processStreamEvent(
+    event: Record<string, unknown>,
+    onWorkLog?: WorkLogCallback
+  ): void {
+    if (!onWorkLog) return;
+
+    const eventType = event.type as string;
+
+    // ツール使用開始
+    if (eventType === 'assistant' && event.message) {
+      const message = event.message as Record<string, unknown>;
+      const content = message.content as Array<Record<string, unknown>> | undefined;
+      if (content) {
+        for (const block of content) {
+          if (block.type === 'tool_use') {
+            const toolName = block.name as string;
+            const toolInput = block.input as Record<string, unknown>;
+            let details = '';
+
+            // ツール別に詳細メッセージを生成
+            if (toolName === 'Read' && toolInput.file_path) {
+              details = String(toolInput.file_path);
+            } else if (toolName === 'Write' && toolInput.file_path) {
+              details = String(toolInput.file_path);
+            } else if (toolName === 'Edit' && toolInput.file_path) {
+              details = String(toolInput.file_path);
+            } else if (toolName === 'Bash' && toolInput.command) {
+              details = String(toolInput.command).slice(0, 100);
+            } else if (toolName === 'Glob' && toolInput.pattern) {
+              details = String(toolInput.pattern);
+            } else if (toolName === 'Grep' && toolInput.pattern) {
+              details = String(toolInput.pattern);
+            } else if (toolName === 'Task') {
+              details = String(toolInput.description ?? '');
+            }
+
+            onWorkLog({
+              type: 'tool_start',
+              tool: toolName,
+              message: this._getToolMessage(toolName),
+              details,
+            });
+          } else if (block.type === 'thinking' && block.thinking) {
+            onWorkLog({
+              type: 'thinking',
+              message: '考え中...',
+              details: String(block.thinking).slice(0, 100),
+            });
+          } else if (block.type === 'text' && block.text) {
+            onWorkLog({
+              type: 'text',
+              message: String(block.text).slice(0, 200),
+            });
+          }
+        }
+      }
+    }
+
+    // ツール使用結果
+    if (eventType === 'user' && event.message) {
+      const message = event.message as Record<string, unknown>;
+      const content = message.content as Array<Record<string, unknown>> | undefined;
+      if (content) {
+        for (const block of content) {
+          if (block.type === 'tool_result') {
+            const isError = block.is_error as boolean;
+            if (isError) {
+              onWorkLog({
+                type: 'error',
+                message: 'ツール実行エラー',
+                details: String(block.content ?? '').slice(0, 200),
+              });
+            } else {
+              onWorkLog({
+                type: 'tool_end',
+                message: 'ツール実行完了',
+              });
+            }
+          }
+        }
+      }
+    }
+
+    // システムイベント（承認待ちなど）
+    if (eventType === 'system') {
+      const subtype = event.subtype as string;
+      if (subtype === 'permission_request') {
+        const tool = event.tool as string | undefined;
+        onWorkLog({
+          type: 'approval_pending',
+          tool,
+          message: `承認待ち: ${tool ?? '不明なツール'}`,
+        });
+      }
+    }
+  }
+
+  /**
+   * ツール名に対応するメッセージを取得する
+   */
+  private _getToolMessage(toolName: string): string {
+    const toolMessages: Record<string, string> = {
+      Read: 'ファイルを読み込み中',
+      Write: 'ファイルを作成中',
+      Edit: 'ファイルを編集中',
+      Bash: 'コマンドを実行中',
+      Glob: 'ファイルを検索中',
+      Grep: 'コードを検索中',
+      Task: 'サブタスクを実行中',
+      WebFetch: 'Webページを取得中',
+      WebSearch: 'Web検索中',
+      LSP: 'コード解析中',
+    };
+    return toolMessages[toolName] ?? `${toolName}を実行中`;
   }
 
   /**
