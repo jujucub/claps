@@ -33,12 +33,6 @@ def get_auth_token() -> str:
 
 def main():
     """メインエントリーポイント"""
-    # SUMOMO_TMUX_SESSION が設定されていない場合は自動許可
-    # （sumomo 以外の通常のClaudeセッションでは承認をスキップ）
-    if not TMUX_SESSION:
-        output_result("allow")
-        return
-
     # 標準入力からHook入力を読み取る
     try:
         input_data = json.load(sys.stdin)
