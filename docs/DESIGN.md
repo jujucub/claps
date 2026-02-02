@@ -110,24 +110,34 @@ GitHub Issue や Slack メンションをトリガーに、ローカル環境の
 ```
 src/
 ├── index.ts           # エントリーポイント、タスク処理
-├── config.ts          # 設定読み込み
+├── config.ts          # 設定読み込み（~/.sumomo/.env優先）
 ├── types/
 │   └── index.ts       # 型定義
 ├── slack/
 │   ├── bot.ts         # Slack Bot (Socket Mode)
 │   └── handlers.ts    # メンション・モーダル・ボタン処理
 ├── github/
-│   └── poller.ts      # Issue監視 (5分間隔)
+│   └── poller.ts      # Issue監視 (ポーリング間隔設定可)
 ├── approval/
 │   └── server.ts      # 承認サーバー (Express)
 ├── claude/
-│   └── runner.ts      # Claude CLI 実行
+│   ├── runner.ts      # Claude CLI 直接実行
+│   └── tmuxRunner.ts  # tmux経由Claude実行
 ├── queue/
 │   └── taskQueue.ts   # タスク管理
 ├── git/
+│   ├── repo.ts        # リポジトリ管理（クローン・更新）
 │   └── worktree.ts    # Git worktree 管理
-└── tmux/
-    └── session.ts     # tmux セッション管理
+├── tmux/
+│   └── session.ts     # tmux セッション管理
+├── mcp/
+│   └── setup.ts       # MCP設定（~/.claude.json管理）
+├── session/
+│   └── store.ts       # セッション永続化（会話継続用）
+└── admin/
+    ├── server.ts      # 管理画面サーバー
+    ├── store.ts       # 管理設定ストア
+    └── public/        # 静的ファイル（HTML/CSS/JS）
 ```
 
 ### 2. tmux セッション管理
@@ -311,16 +321,27 @@ tmux send-keys   tmux send-keys
 
 ## 必要な認証情報
 
-| 項目 | 用途 | 取得方法 |
+### 必須
+
+| 項目 | 形式 | 取得方法 |
 |------|------|---------|
-| `ANTHROPIC_API_KEY` | Claude API | Anthropic Console |
-| `SLACK_BOT_TOKEN` | Slack API | Slack App設定 (xoxb-...) |
-| `SLACK_APP_TOKEN` | Socket Mode | Slack App設定 (xapp-...) |
-| `SLACK_CHANNEL_ID` | 通知先チャンネル | Slack チャンネル情報 |
-| `GITHUB_TOKEN` | GitHub API | GitHub Settings > Developer settings |
-| `GITHUB_OWNER` | リポジトリオーナー | GitHub リポジトリURL |
-| `GITHUB_REPO` | リポジトリ名 | GitHub リポジトリURL |
-| `APPROVAL_SERVER_PORT` | 承認サーバー | デフォルト: 3001 |
+| `SLACK_BOT_TOKEN` | `xoxb-...` | Slack App設定 |
+| `SLACK_APP_TOKEN` | `xapp-...` | Slack App設定 (Socket Mode) |
+| `SLACK_CHANNEL_ID` | `C0123456789` | Slack チャンネル情報 |
+| `SLACK_TEAM_ID` | `T0123456789` | Slackワークスペース情報 |
+| `GITHUB_TOKEN` | `github_pat_...` | GitHub Settings > Developer settings |
+| `GITHUB_REPOS` | `owner/repo1,owner/repo2` | 監視対象リポジトリ（カンマ区切り） |
+
+### 任意
+
+| 項目 | デフォルト | 用途 |
+|------|-----------|------|
+| `ANTHROPIC_API_KEY` | - | Claude API（Max Plan使用時は不要） |
+| `APPROVAL_SERVER_PORT` | 3001 | 承認サーバーポート |
+| `ADMIN_SERVER_PORT` | 3002 | 管理画面サーバーポート |
+| `GITHUB_POLL_INTERVAL` | 300000 | GitHub監視間隔（ミリ秒） |
+| `ALLOWED_GITHUB_USERS` | - | 許可GitHubユーザー（カンマ区切り） |
+| `ALLOWED_SLACK_USERS` | - | 許可SlackユーザーID（カンマ区切り） |
 
 ---
 
@@ -346,7 +367,9 @@ tmux send-keys   tmux send-keys
 ```
 sumomo/
 ├── docs/
-│   └── DESIGN.md              # 本設計書
+│   ├── DESIGN.md              # 本設計書
+│   ├── CONTRIB.md             # 開発者ガイド
+│   └── RUNBOOK.md             # 運用手順書
 ├── src/                       # 統合Botソース
 │   ├── index.ts               # エントリーポイント
 │   ├── config.ts              # 設定
@@ -360,17 +383,38 @@ sumomo/
 │   ├── approval/
 │   │   └── server.ts          # 承認サーバー
 │   ├── claude/
-│   │   └── runner.ts          # Claude CLI実行
+│   │   ├── runner.ts          # Claude CLI直接実行
+│   │   └── tmuxRunner.ts      # tmux経由実行
 │   ├── queue/
 │   │   └── taskQueue.ts       # タスクキュー
 │   ├── git/
+│   │   ├── repo.ts            # リポジトリ管理
 │   │   └── worktree.ts        # worktree管理
-│   └── tmux/
-│       └── session.ts         # tmuxセッション管理
+│   ├── tmux/
+│   │   └── session.ts         # tmuxセッション管理
+│   ├── mcp/
+│   │   └── setup.ts           # MCP設定
+│   ├── session/
+│   │   └── store.ts           # セッション永続化
+│   └── admin/
+│       ├── server.ts          # 管理画面サーバー
+│       ├── store.ts           # 管理設定ストア
+│       └── public/            # 管理画面静的ファイル
+├── mcp-servers/
+│   └── ask-human/             # ask-human MCPサーバー
+├── templates/                 # プロジェクトテンプレート
+│   ├── android/
+│   └── unity/
 ├── .claude/
+│   ├── settings.json          # Claude設定
 │   └── hooks/
 │       └── slack-approval.py  # 承認スクリプト
-├── .worktrees/                # Issue作業用ディレクトリ（自動生成）
+├── ~/.sumomo/                 # ユーザー設定ディレクトリ
+│   ├── .env                   # 環境変数（優先読み込み）
+│   ├── admin-config.json      # 管理設定
+│   └── repos/                 # クローンしたリポジトリ
+│       └── {owner}/{repo}/
+│           └── .worktrees/    # Issue作業用ディレクトリ
 ├── package.json
 ├── tsconfig.json
 └── README.md
@@ -384,15 +428,19 @@ sumomo/
 # 1. 依存インストール
 npm install
 
-# 2. 環境変数設定
-export ANTHROPIC_API_KEY="sk-..."
+# 2. 環境変数設定（.envファイル推奨）
+cp .env.example ~/.sumomo/.env
+# ~/.sumomo/.env を編集
+
+# または環境変数を直接設定
 export SLACK_BOT_TOKEN="xoxb-..."
 export SLACK_APP_TOKEN="xapp-..."
 export SLACK_CHANNEL_ID="C0123456789"
-export GITHUB_TOKEN="ghp_..."
-export GITHUB_OWNER="your-org"
-export GITHUB_REPO="your-repo"
-export APPROVAL_SERVER_PORT="3001"
+export SLACK_TEAM_ID="T0123456789"
+export GITHUB_TOKEN="github_pat_..."
+export GITHUB_REPOS="owner/repo1,owner/repo2"
+export ALLOWED_GITHUB_USERS="user1,user2"
+export ALLOWED_SLACK_USERS="U01234567,U09876543"
 
 # 3. ビルド
 npm run build
@@ -400,6 +448,25 @@ npm run build
 # 4. 起動
 npm start
 ```
+
+### 環境変数の読み込み優先順位
+
+1. `~/.sumomo/.env` （存在する場合）
+2. プロジェクトルートの `.env`
+
+### 管理画面
+
+起動後、以下のURLで管理画面にアクセス可能:
+
+```
+http://localhost:3002/
+```
+
+管理画面で設定可能:
+- 許可GitHubユーザー
+- 許可Slackユーザー
+- 監視対象リポジトリ
+- GitHubユーザー ↔ Slackユーザーのマッピング
 
 ---
 

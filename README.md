@@ -20,6 +20,8 @@ GitHub Issue / Slack 連携 Claude 自動対応システム
 | **tmux制御** | Claude CLIを対話モードで実行、権限制御も可能 |
 | **Slackスレッド** | Issue処理の進捗をスレッドでリアルタイム通知 |
 | **モーダル承認** | 許可/拒否時にコメント入力可能 |
+| **セッション継続** | 同じスレッド/Issueでの会話を継続可能 |
+| **管理UI** | ホワイトリストやリポジトリをWebで管理 |
 
 ## 名前の由来
 
@@ -45,24 +47,37 @@ npm start
 
 ## 必要な環境
 
-- **Node.js** 18+
-- **Claude CLI** インストール済み
-- **tmux** インストール済み
-- **Git** 2.20+ (worktree機能)
-- **GitHub CLI (gh)** インストール済み
+| ツール | バージョン | 用途 |
+|--------|-----------|------|
+| Node.js | >= 20.0.0 | ランタイム |
+| Claude CLI | 最新 | AI実行エンジン |
+| tmux | 最新 | セッション管理 |
+| Git | >= 2.20 | worktree機能 |
+| GitHub CLI (gh) | 最新 | PR作成 |
 
-## 必要な認証情報
+## 環境変数
 
-| 項目 | 取得方法 |
-|------|---------|
-| `ANTHROPIC_API_KEY` | [Anthropic Console](https://console.anthropic.com/) |
-| `SLACK_BOT_TOKEN` | Slack App 設定 (xoxb-...) |
-| `SLACK_APP_TOKEN` | Slack App 設定 - Socket Mode (xapp-...) |
-| `SLACK_CHANNEL_ID` | 通知先チャンネルID |
-| `GITHUB_TOKEN` | GitHub Settings > Developer settings |
-| `GITHUB_OWNER` | リポジトリオーナー名 |
-| `GITHUB_REPO` | リポジトリ名 |
-| `APPROVAL_SERVER_PORT` | 承認サーバーポート (デフォルト: 3001) |
+### 必須
+
+| 項目 | 形式 | 説明 |
+|------|------|------|
+| `SLACK_BOT_TOKEN` | `xoxb-...` | Slack Bot Token |
+| `SLACK_APP_TOKEN` | `xapp-...` | Slack App Token (Socket Mode) |
+| `SLACK_CHANNEL_ID` | `C0123456789` | 通知先チャンネルID |
+| `SLACK_TEAM_ID` | `T0123456789` | SlackワークスペースID |
+| `GITHUB_TOKEN` | `github_pat_...` | GitHub Personal Access Token |
+| `GITHUB_REPOS` | `owner/repo1,owner/repo2` | 監視対象リポジトリ（カンマ区切り） |
+
+### 任意
+
+| 項目 | デフォルト | 説明 |
+|------|-----------|------|
+| `ANTHROPIC_API_KEY` | - | Anthropic API Key（Max Plan使用時は不要） |
+| `APPROVAL_SERVER_PORT` | `3001` | 承認サーバーポート |
+| `ADMIN_SERVER_PORT` | `3002` | 管理画面サーバーポート |
+| `GITHUB_POLL_INTERVAL` | `300000` | GitHub監視間隔（ミリ秒） |
+| `ALLOWED_GITHUB_USERS` | - | 許可するGitHubユーザー（カンマ区切り） |
+| `ALLOWED_SLACK_USERS` | - | 許可するSlackユーザーID（カンマ区切り） |
 
 ## 使い方
 
@@ -87,9 +102,33 @@ npm start
 @sumomo このファイルのテストを書いて
 ```
 
+### 管理UI
+
+```
+http://localhost:3002/
+```
+
+管理UIで設定可能:
+- 許可GitHubユーザー
+- 許可Slackユーザー
+- 監視対象リポジトリ
+- GitHubユーザー ↔ Slackユーザーのマッピング
+
+## 利用可能なスクリプト
+
+| コマンド | 説明 |
+|----------|------|
+| `npm run build` | TypeScriptをコンパイル |
+| `npm start` | 本番モードで起動 |
+| `npm run dev` | 開発モードで起動（ホットリロード） |
+| `npm run lint` | ESLintで静的解析 |
+| `npm run typecheck` | TypeScriptの型チェック |
+
 ## ドキュメント
 
 - [設計書](./docs/DESIGN.md) - システム構成、処理フロー、実装詳細
+- [開発者ガイド](./docs/CONTRIB.md) - 開発環境セットアップ、コーディング規約
+- [運用手順書](./docs/RUNBOOK.md) - デプロイ、監視、トラブルシューティング
 
 ## ライセンス
 
