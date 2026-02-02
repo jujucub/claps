@@ -134,7 +134,9 @@ export class ClaudeRunner {
       args.push('-p', prompt);
 
       // ストリーミングJSON出力でリアルタイムにイベントを取得
+      // 注意: stream-json を使うには --verbose が必要
       args.push('--output-format', 'stream-json');
+      args.push('--verbose');
 
       // Claude CLI を起動
       // CLAUDE_PROJECT_DIR を明示的に設定してworktree側の.claude/設定を使用する
