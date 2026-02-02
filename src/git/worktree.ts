@@ -6,6 +6,19 @@
 import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
+
+// sumomoのPreToolUseフック設定
+const SUMOMO_HOOK_CONFIG = {
+  matcher: 'Bash|Write|Edit',
+  hooks: [
+    {
+      type: 'command',
+      command: 'python3 $CLAUDE_PROJECT_DIR/.claude/hooks/slack-approval.py',
+      timeout: 320000,
+    },
+  ],
+};
 
 export interface WorktreeInfo {
   readonly branchName: string;
@@ -92,6 +105,9 @@ export async function CreateWorktree(
       stdio: 'pipe',
     }
   );
+
+  // sumomoのPreToolUseフック設定を注入
+  await InjectClaudeSettings(worktreeDir);
 
   const info: WorktreeInfo = {
     branchName,
@@ -287,4 +303,77 @@ export async function CleanupAllWorktrees(): Promise<void> {
   }
   _activeWorktrees.clear();
   console.log('Cleaned up all worktrees');
+}
+
+/**
+ * worktree に sumomo の .claude 設定を注入する
+ * 既存の settings.json がある場合はマージする
+ */
+async function InjectClaudeSettings(worktreeDir: string): Promise<void> {
+  const claudeDir = path.join(worktreeDir, '.claude');
+  const hooksDir = path.join(claudeDir, 'hooks');
+  const settingsPath = path.join(claudeDir, 'settings.json');
+
+  // .claude ディレクトリを作成
+  if (!fs.existsSync(claudeDir)) {
+    fs.mkdirSync(claudeDir, { recursive: true });
+  }
+
+  // hooks ディレクトリを作成
+  if (!fs.existsSync(hooksDir)) {
+    fs.mkdirSync(hooksDir, { recursive: true });
+  }
+
+  // 既存の settings.json を読み込むか、空のオブジェクトを作成
+  let settings: Record<string, unknown> = {};
+  if (fs.existsSync(settingsPath)) {
+    try {
+      const content = fs.readFileSync(settingsPath, 'utf-8');
+      settings = JSON.parse(content) as Record<string, unknown>;
+    } catch {
+      // パースエラーの場合は空で開始
+    }
+  }
+
+  // hooks.PreToolUse 配列を取得または作成
+  if (!settings['hooks']) {
+    settings['hooks'] = {};
+  }
+  const hooks = settings['hooks'] as Record<string, unknown>;
+
+  if (!hooks['PreToolUse']) {
+    hooks['PreToolUse'] = [];
+  }
+  const preToolUseHooks = hooks['PreToolUse'] as Array<Record<string, unknown>>;
+
+  // sumomo の hook が既に存在するか確認
+  const hasSumomoHook = preToolUseHooks.some(
+    (hook) => hook['matcher'] === SUMOMO_HOOK_CONFIG.matcher
+  );
+
+  if (!hasSumomoHook) {
+    // sumomo の hook を追加（先頭に追加して優先度を上げる）
+    preToolUseHooks.unshift(SUMOMO_HOOK_CONFIG);
+  }
+
+  // settings.json を書き込み
+  fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+
+  // slack-approval.py をコピー
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = path.dirname(__filename);
+  // dist/git/worktree.js -> ../../.claude/hooks/slack-approval.py
+  const sumomoRoot = path.resolve(__dirname, '..', '..');
+  const sourceHookPath = path.join(sumomoRoot, '.claude', 'hooks', 'slack-approval.py');
+  const destHookPath = path.join(hooksDir, 'slack-approval.py');
+
+  if (fs.existsSync(sourceHookPath)) {
+    fs.copyFileSync(sourceHookPath, destHookPath);
+    // 実行権限を付与
+    fs.chmodSync(destHookPath, 0o755);
+  } else {
+    console.warn(`Warning: slack-approval.py not found at ${sourceHookPath}`);
+  }
+
+  console.log(`Injected sumomo .claude settings into ${worktreeDir}`);
 }

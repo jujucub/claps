@@ -33,16 +33,20 @@ def get_auth_token() -> str:
 
 def main():
     """メインエントリーポイント"""
+    print("[Hook] slack-approval.py started", file=sys.stderr)
+
     # 標準入力からHook入力を読み取る
     try:
         input_data = json.load(sys.stdin)
     except json.JSONDecodeError:
+        print("[Hook] JSON parse error, allowing", file=sys.stderr)
         # JSONパースエラーの場合は許可
         output_result("allow")
         return
 
     tool_name = input_data.get('tool_name', '')
     tool_input = input_data.get('tool_input', {})
+    print(f"[Hook] tool_name={tool_name}", file=sys.stderr)
 
     # 承認サーバーに問い合わせ
     try:
