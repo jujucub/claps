@@ -7,6 +7,7 @@ import { LoadConfig } from './config.js';
 import type { Config, GitHubTaskMetadata, SlackTaskMetadata, Task } from './types/index.js';
 import { GetTaskQueue, type TaskQueue } from './queue/taskQueue.js';
 import { GetClaudeRunner, type ClaudeRunner, type WorkLog } from './claude/runner.js';
+import { RunWithTmux, type WorkLog as TmuxWorkLog } from './claude/tmuxRunner.js';
 import { GetSessionStore } from './session/store.js';
 import {
   InitSlackBot,
@@ -683,9 +684,9 @@ async function ProcessGitHubTask(
     // 作業ログを Slack に投稿するコールバック
     let lastWorkLogTime = 0;
 
-    const onWorkLog = async (log: WorkLog) => {
+    // Claude CLI を tmux 経由で実行（対話モード）
+    const onTmuxWorkLog = async (log: TmuxWorkLog) => {
       const now = Date.now();
-      // レート制限（エラーと承認待ちは即時投稿）
       if (log.type !== 'error' && log.type !== 'approval_pending') {
         if (now - lastWorkLogTime < WORK_LOG_INTERVAL_MS) return;
       }
@@ -705,18 +706,24 @@ async function ProcessGitHubTask(
       }
     };
 
-    // Claude CLI を実行（非対話モード + セッション継続）
-    const runResult = await _claudeRunner.Run(task.id, worktreePrompt, {
-      workingDirectory: worktreeInfo.worktreePath,
-      onWorkLog,
-      resumeSessionId: existingSessionId,
-    });
+    // 承認権限を持つユーザーIDを取得
+    const requestedBySlackId = GetRequestedBySlackId(task);
 
-    // 新しいセッションIDが返された場合は保存
-    if (runResult.sessionId) {
-      sessionStore.SetForIssue(meta.owner, meta.repo, meta.issueNumber, runResult.sessionId);
-      console.log(`Session saved for issue #${meta.issueNumber}: ${runResult.sessionId}`);
-    }
+    const runResult = await RunWithTmux(
+      task.id,
+      worktreePrompt,
+      meta.owner,
+      meta.repo,
+      meta.issueNumber,
+      {
+        workingDirectory: worktreeInfo.worktreePath,
+        onWorkLog: onTmuxWorkLog,
+        slackApp,
+        slackChannelId: _config.slackChannelId,
+        slackThreadTs: threadTs,
+        requestedBySlackId,
+      }
+    );
 
     // Claude CLIの結果をそのまま返す（コミット・PR作成はLLMが判断して実行）
     return {
