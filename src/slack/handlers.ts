@@ -9,6 +9,13 @@ import type {
   SlackTaskMetadata,
   AllowedUsers,
 } from '../types/index.js';
+import {
+  GetAdminSlackUser,
+  GetAdminConfig,
+  SaveAdminConfig,
+} from '../admin/store.js';
+import { UpdateRepos } from '../github/poller.js';
+import { UpdateAllowedUsers as UpdateGitHubAllowedUsers } from '../github/poller.js';
 
 // ホワイトリスト（RegisterSlackHandlersで設定、UpdateAllowedUsersで更新可能）
 let _allowedUsers: AllowedUsers | undefined;
@@ -21,6 +28,15 @@ function IsUserAllowed(userId: string): boolean {
   // ホワイトリストが空の場合は全員拒否
   if (_allowedUsers.slack.length === 0) return false;
   return _allowedUsers.slack.includes(userId);
+}
+
+/**
+ * SlackユーザーIDが管理者かどうかチェック
+ */
+function IsAdmin(userId: string): boolean {
+  const adminUser = GetAdminSlackUser();
+  if (!adminUser) return false;
+  return adminUser === userId;
 }
 
 /**
@@ -71,6 +87,15 @@ function IsValidRepoFormat(repo: string): boolean {
 }
 
 /**
+ * GitHubユーザー名を検証する
+ * GitHubユーザー名: 1-39文字、英数字とハイフン、先頭/末尾ハイフン不可、連続ハイフン不可
+ */
+function IsValidGitHubUsername(username: string): boolean {
+  if (!username || username.length === 0 || username.length > 39) return false;
+  return /^[a-zA-Z0-9](?:[a-zA-Z0-9]|-(?=[a-zA-Z0-9])){0,38}$/.test(username);
+}
+
+/**
  * Slack ハンドラーを登録する
  */
 export function RegisterSlackHandlers(
@@ -99,33 +124,351 @@ export function RegisterSlackHandlers(
     }
 
     const text = command.text.trim();
+    const parts = text.split(/\s+/);
+    const subCommand = parts[0]?.toLowerCase() ?? '';
 
-    // 使い方を表示
-    if (!text || text === 'help') {
-      await respond({
-        response_type: 'ephemeral',
-        text: `🍑 *すももコマンドの使い方*
+    // ヘルプ表示
+    if (!text || subCommand === 'help') {
+      const isAdmin = IsAdmin(userId);
+      let helpText = `🍑 *すももコマンドの使い方*
 
+*基本コマンド:*
 \`/sumomo owner/repo メッセージ\`
 → 指定したリポジトリの環境でClaudeを実行
 
-*例:*
-\`/sumomo h-sato/my-project バグを修正して\`
-\`/sumomo my-org/frontend ボタンのスタイルを変更して\`
+\`/sumomo repos\`
+→ 監視対象リポジトリの一覧を表示
 
-リポジトリは監視対象でなくても使用できます。`,
+*例:*
+\`/sumomo h-sato/my-project バグを修正して\``;
+
+      if (isAdmin) {
+        helpText += `
+
+*管理者コマンド:*
+\`/sumomo add-repo owner/repo\`
+→ 監視リポジトリを追加
+
+\`/sumomo remove-repo owner/repo\`
+→ 監視リポジトリを削除
+
+\`/sumomo whitelist\`
+→ ホワイトリストを表示
+
+\`/sumomo whitelist add @user\`
+→ Slackユーザーをホワイトリストに追加
+
+\`/sumomo whitelist add-github username\`
+→ GitHubユーザーをホワイトリストに追加
+
+\`/sumomo whitelist remove @user\`
+→ Slackユーザーをホワイトリストから削除
+
+\`/sumomo whitelist remove-github username\`
+→ GitHubユーザーをホワイトリストから削除`;
+      }
+
+      await respond({
+        response_type: 'ephemeral',
+        text: helpText,
       });
       return;
     }
 
-    // owner/repo とメッセージを分離
-    const parts = text.split(/\s+/);
+    // repos サブコマンド - 監視対象リポジトリ一覧
+    if (subCommand === 'repos') {
+      const config = GetAdminConfig();
+      const repos = config.githubRepos;
+
+      if (repos.length === 0) {
+        await respond({
+          response_type: 'ephemeral',
+          text: '🍑 監視対象のリポジトリはまだ登録されていないのです。',
+        });
+        return;
+      }
+
+      const repoList = repos.map((repo, i) => `${i + 1}. \`${repo}\``).join('\n');
+      await respond({
+        response_type: 'ephemeral',
+        text: `🍑 *監視対象リポジトリ一覧* (${repos.length}件)\n\n${repoList}`,
+      });
+      return;
+    }
+
+    // add-repo サブコマンド（管理者のみ）
+    if (subCommand === 'add-repo') {
+      if (!IsAdmin(userId)) {
+        await respond({
+          response_type: 'ephemeral',
+          text: '🍑 このコマンドは管理者のみ使用できるのです。',
+        });
+        return;
+      }
+
+      const repoToAdd = parts[1] ?? '';
+      if (!IsValidRepoFormat(repoToAdd)) {
+        await respond({
+          response_type: 'ephemeral',
+          text: '🍑 リポジトリの形式が正しくないのです。\n使い方: `/sumomo add-repo owner/repo`',
+        });
+        return;
+      }
+
+      const config = GetAdminConfig();
+      if (config.githubRepos.includes(repoToAdd)) {
+        await respond({
+          response_type: 'ephemeral',
+          text: `🍑 \`${repoToAdd}\` は既に監視対象に含まれているのです。`,
+        });
+        return;
+      }
+
+      const newRepos = [...config.githubRepos, repoToAdd];
+      SaveAdminConfig({ ...config, githubRepos: newRepos });
+      UpdateRepos(newRepos);
+
+      await respond({
+        response_type: 'ephemeral',
+        text: `🍑 \`${repoToAdd}\` を監視対象に追加したのでーす！`,
+      });
+      return;
+    }
+
+    // remove-repo サブコマンド（管理者のみ）
+    if (subCommand === 'remove-repo') {
+      if (!IsAdmin(userId)) {
+        await respond({
+          response_type: 'ephemeral',
+          text: '🍑 このコマンドは管理者のみ使用できるのです。',
+        });
+        return;
+      }
+
+      const repoToRemove = parts[1] ?? '';
+      if (!IsValidRepoFormat(repoToRemove)) {
+        await respond({
+          response_type: 'ephemeral',
+          text: '🍑 リポジトリの形式が正しくないのです。\n使い方: `/sumomo remove-repo owner/repo`',
+        });
+        return;
+      }
+
+      const config = GetAdminConfig();
+      if (!config.githubRepos.includes(repoToRemove)) {
+        await respond({
+          response_type: 'ephemeral',
+          text: `🍑 \`${repoToRemove}\` は監視対象に含まれていないのです。`,
+        });
+        return;
+      }
+
+      const newRepos = config.githubRepos.filter((r) => r !== repoToRemove);
+      SaveAdminConfig({ ...config, githubRepos: newRepos });
+      UpdateRepos(newRepos);
+
+      await respond({
+        response_type: 'ephemeral',
+        text: `🍑 \`${repoToRemove}\` を監視対象から削除したのでーす！`,
+      });
+      return;
+    }
+
+    // whitelist サブコマンド（管理者のみ）
+    if (subCommand === 'whitelist') {
+      if (!IsAdmin(userId)) {
+        await respond({
+          response_type: 'ephemeral',
+          text: '🍑 このコマンドは管理者のみ使用できるのです。',
+        });
+        return;
+      }
+
+      const whitelistAction = parts[1]?.toLowerCase() ?? '';
+      const config = GetAdminConfig();
+
+      // whitelist のみ - 一覧表示
+      if (!whitelistAction) {
+        const slackUsers = config.allowedSlackUsers;
+        const githubUsers = config.allowedGithubUsers;
+
+        let text = '🍑 *ホワイトリスト*\n\n';
+        text += `*Slackユーザー* (${slackUsers.length}件):\n`;
+        if (slackUsers.length > 0) {
+          text += slackUsers.map((u) => `• <@${u}>`).join('\n');
+        } else {
+          text += '(なし)';
+        }
+
+        text += `\n\n*GitHubユーザー* (${githubUsers.length}件):\n`;
+        if (githubUsers.length > 0) {
+          text += githubUsers.map((u) => `• \`${u}\``).join('\n');
+        } else {
+          text += '(なし)';
+        }
+
+        await respond({
+          response_type: 'ephemeral',
+          text,
+        });
+        return;
+      }
+
+      // whitelist add @user - Slackユーザー追加
+      if (whitelistAction === 'add') {
+        const userMention = parts[2] ?? '';
+        const match = userMention.match(/<@([A-Z0-9]+)(?:\|[^>]+)?>/);
+        if (!match) {
+          await respond({
+            response_type: 'ephemeral',
+            text: '🍑 ユーザーを@メンションで指定してくださいなのです。\n使い方: `/sumomo whitelist add @user`',
+          });
+          return;
+        }
+
+        const targetUserId = match[1] ?? '';
+        if (config.allowedSlackUsers.includes(targetUserId)) {
+          await respond({
+            response_type: 'ephemeral',
+            text: `🍑 <@${targetUserId}> は既にホワイトリストに含まれているのです。`,
+          });
+          return;
+        }
+
+        const newSlackUsers = [...config.allowedSlackUsers, targetUserId];
+        SaveAdminConfig({ ...config, allowedSlackUsers: newSlackUsers });
+        UpdateAllowedUsers(newSlackUsers);
+
+        await respond({
+          response_type: 'ephemeral',
+          text: `🍑 <@${targetUserId}> をホワイトリストに追加したのでーす！`,
+        });
+        return;
+      }
+
+      // whitelist add-github username - GitHubユーザー追加
+      if (whitelistAction === 'add-github') {
+        const githubUsername = parts[2] ?? '';
+        if (!IsValidGitHubUsername(githubUsername)) {
+          await respond({
+            response_type: 'ephemeral',
+            text: '🍑 GitHubユーザー名が正しくないのです。\n英数字とハイフンのみ使用可能（1〜39文字）\n使い方: `/sumomo whitelist add-github username`',
+          });
+          return;
+        }
+
+        const lowerUsername = githubUsername.toLowerCase();
+        if (config.allowedGithubUsers.some((u) => u.toLowerCase() === lowerUsername)) {
+          await respond({
+            response_type: 'ephemeral',
+            text: `🍑 \`${githubUsername}\` は既にホワイトリストに含まれているのです。`,
+          });
+          return;
+        }
+
+        const newGithubUsers = [...config.allowedGithubUsers, githubUsername];
+        SaveAdminConfig({ ...config, allowedGithubUsers: newGithubUsers });
+        UpdateGitHubAllowedUsers(newGithubUsers);
+
+        await respond({
+          response_type: 'ephemeral',
+          text: `🍑 GitHubユーザー \`${githubUsername}\` をホワイトリストに追加したのでーす！`,
+        });
+        return;
+      }
+
+      // whitelist remove @user - Slackユーザー削除
+      if (whitelistAction === 'remove') {
+        const userMention = parts[2] ?? '';
+        const match = userMention.match(/<@([A-Z0-9]+)(?:\|[^>]+)?>/);
+        if (!match) {
+          await respond({
+            response_type: 'ephemeral',
+            text: '🍑 ユーザーを@メンションで指定してくださいなのです。\n使い方: `/sumomo whitelist remove @user`',
+          });
+          return;
+        }
+
+        const targetUserId = match[1] ?? '';
+        if (!config.allowedSlackUsers.includes(targetUserId)) {
+          await respond({
+            response_type: 'ephemeral',
+            text: `🍑 <@${targetUserId}> はホワイトリストに含まれていないのです。`,
+          });
+          return;
+        }
+
+        // 管理者自身は削除できない
+        if (targetUserId === userId) {
+          await respond({
+            response_type: 'ephemeral',
+            text: '🍑 自分自身をホワイトリストから削除することはできないのです。',
+          });
+          return;
+        }
+
+        const newSlackUsers = config.allowedSlackUsers.filter((u) => u !== targetUserId);
+        SaveAdminConfig({ ...config, allowedSlackUsers: newSlackUsers });
+        UpdateAllowedUsers(newSlackUsers);
+
+        await respond({
+          response_type: 'ephemeral',
+          text: `🍑 <@${targetUserId}> をホワイトリストから削除したのでーす！`,
+        });
+        return;
+      }
+
+      // whitelist remove-github username - GitHubユーザー削除
+      if (whitelistAction === 'remove-github') {
+        const githubUsername = parts[2] ?? '';
+        if (!IsValidGitHubUsername(githubUsername)) {
+          await respond({
+            response_type: 'ephemeral',
+            text: '🍑 GitHubユーザー名が正しくないのです。\n英数字とハイフンのみ使用可能（1〜39文字）\n使い方: `/sumomo whitelist remove-github username`',
+          });
+          return;
+        }
+
+        const lowerUsername = githubUsername.toLowerCase();
+        const existingUser = config.allowedGithubUsers.find(
+          (u) => u.toLowerCase() === lowerUsername
+        );
+        if (!existingUser) {
+          await respond({
+            response_type: 'ephemeral',
+            text: `🍑 \`${githubUsername}\` はホワイトリストに含まれていないのです。`,
+          });
+          return;
+        }
+
+        const newGithubUsers = config.allowedGithubUsers.filter(
+          (u) => u.toLowerCase() !== lowerUsername
+        );
+        SaveAdminConfig({ ...config, allowedGithubUsers: newGithubUsers });
+        UpdateGitHubAllowedUsers(newGithubUsers);
+
+        await respond({
+          response_type: 'ephemeral',
+          text: `🍑 GitHubユーザー \`${existingUser}\` をホワイトリストから削除したのでーす！`,
+        });
+        return;
+      }
+
+      // 不明なwhitelistサブコマンド
+      await respond({
+        response_type: 'ephemeral',
+        text: '🍑 不明なサブコマンドなのです。\n使い方: `/sumomo whitelist [add|add-github|remove|remove-github]`',
+      });
+      return;
+    }
+
+    // owner/repo 形式のチェック（タスク実行）
     const firstPart = parts[0] ?? '';
 
     if (!IsValidRepoFormat(firstPart)) {
       await respond({
         response_type: 'ephemeral',
-        text: `🍑 リポジトリの形式が正しくないのです。\n\n使い方: \`/sumomo owner/repo メッセージ\`\n例: \`/sumomo h-sato/my-project バグを修正して\``,
+        text: `🍑 リポジトリの形式が正しくないか、不明なコマンドなのです。\n\n使い方: \`/sumomo owner/repo メッセージ\`\nヘルプ: \`/sumomo help\``,
       });
       return;
     }
