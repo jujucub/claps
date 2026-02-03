@@ -411,7 +411,7 @@ async function ProcessSlackAsIssueTask(
     // 作業ログを Slack に投稿するコールバック
     let lastWorkLogTime = 0;
 
-    const onWorkLog = async (log: WorkLog) => {
+    const onTmuxWorkLog = async (log: TmuxWorkLog) => {
       const now = Date.now();
       if (log.type !== 'error' && log.type !== 'approval_pending') {
         if (now - lastWorkLogTime < WORK_LOG_INTERVAL_MS) return;
@@ -439,22 +439,23 @@ async function ProcessSlackAsIssueTask(
       slackMeta.threadTs,
       _config!.githubRepos
     );
-    const runResult = await _claudeRunner.Run(task.id, promptWithContext, {
-      workingDirectory: worktreeInfo.worktreePath,
-      onWorkLog,
-      resumeSessionId: existingSessionId,
-    });
 
-    // セッションIDを保存
-    if (runResult.sessionId) {
-      sessionStore.SetForIssue(
-        issueInfo.owner,
-        issueInfo.repo,
-        issueInfo.issueNumber,
-        runResult.sessionId
-      );
-      console.log(`Session saved for issue #${issueInfo.issueNumber}: ${runResult.sessionId}`);
-    }
+    // tmux経由で対話モードで実行（権限リクエストを自動処理）
+    const runResult = await RunWithTmux(
+      task.id,
+      promptWithContext,
+      issueInfo.owner,
+      issueInfo.repo,
+      issueInfo.issueNumber,
+      {
+        workingDirectory: worktreeInfo.worktreePath,
+        onWorkLog: onTmuxWorkLog,
+        slackApp,
+        slackChannelId: _config.slackChannelId,
+        slackThreadTs: slackMeta.threadTs,
+        requestedBySlackId: slackMeta.userId,
+      }
+    );
 
     // 変更があればコミット＆プッシュ
     const commitMessage = `fix: Issue #${issueInfo.issueNumber} - additional changes`;
@@ -552,7 +553,7 @@ async function ProcessSlackWithTargetRepo(
     // 作業ログを Slack に投稿するコールバック
     let lastWorkLogTime = 0;
 
-    const onWorkLog = async (log: WorkLog) => {
+    const onTmuxWorkLog = async (log: TmuxWorkLog) => {
       const now = Date.now();
       if (log.type !== 'error' && log.type !== 'approval_pending') {
         if (now - lastWorkLogTime < WORK_LOG_INTERVAL_MS) return;
@@ -582,17 +583,22 @@ async function ProcessSlackWithTargetRepo(
       worktreeInfo.branchName
     );
 
-    const runResult = await _claudeRunner.Run(task.id, promptWithContext, {
-      workingDirectory: worktreeInfo.worktreePath,
-      onWorkLog,
-      resumeSessionId: existingSessionId,
-    });
-
-    // セッションIDを保存
-    if (runResult.sessionId) {
-      sessionStore.Set(slackMeta.threadTs, slackMeta.userId, runResult.sessionId);
-      console.log(`Session saved for thread ${slackMeta.threadTs}: ${runResult.sessionId}`);
-    }
+    // tmux経由で対話モードで実行（権限リクエストを自動処理）
+    const runResult = await RunWithTmux(
+      task.id,
+      promptWithContext,
+      owner,
+      repo,
+      worktreeIdentifier,
+      {
+        workingDirectory: worktreeInfo.worktreePath,
+        onWorkLog: onTmuxWorkLog,
+        slackApp,
+        slackChannelId: _config.slackChannelId,
+        slackThreadTs: slackMeta.threadTs,
+        requestedBySlackId: slackMeta.userId,
+      }
+    );
 
     return {
       success: runResult.success,

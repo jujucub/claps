@@ -358,21 +358,6 @@ async function InjectClaudeSettings(worktreeDir: string): Promise<void> {
     preToolUseHooks.unshift(SUMOMO_HOOK_CONFIG);
   }
 
-  // allowedTools を設定（MCPツールの使用を許可）
-  if (!settings['allowedTools']) {
-    settings['allowedTools'] = [];
-  }
-  const allowedTools = settings['allowedTools'] as string[];
-  const sumomoTools = [
-    'mcp__sumomo-slack__*', // Slack MCPの全ツール
-    'mcp__sumomo-github__*', // GitHub MCPの全ツール
-  ];
-  for (const tool of sumomoTools) {
-    if (!allowedTools.includes(tool)) {
-      allowedTools.push(tool);
-    }
-  }
-
   // settings.json を書き込み
   fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
 
