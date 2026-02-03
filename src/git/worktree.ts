@@ -278,6 +278,8 @@ export async function GetOrCreateWorktree(
 
   if (existing && fs.existsSync(existing.worktreePath)) {
     console.log(`Reusing existing worktree: ${existing.worktreePath}`);
+    // 既存worktreeでも毎回hook設定を再注入（git merge等で上書きされる可能性があるため）
+    await InjectClaudeSettings(existing.worktreePath);
     return { worktreeInfo: existing, isExisting: true };
   }
 
