@@ -410,12 +410,9 @@ export class ClaudeRunner {
               message: '考え中...',
               details: String(block.thinking).slice(0, 100),
             });
-          } else if (block.type === 'text' && block.text) {
-            onWorkLog({
-              type: 'text',
-              message: String(block.text).slice(0, 200),
-            });
           }
+          // 注意: textブロックはonWorkLogで送信しない
+          // 最終結果はNotifyResultで送信されるため、ここで送信すると重複する
         }
       }
     }
