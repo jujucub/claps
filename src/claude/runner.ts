@@ -490,20 +490,22 @@ export class ClaudeRunner {
 
   /**
    * JSON出力をパースしてテキストとセッションIDを抽出する
-   * Claude CLIの--output-format json出力形式:
+   * Claude CLIの--output-format stream-json出力形式:
    * 各行がJSONオブジェクト（JSON Lines形式）
-   * {
-   *   "type": "assistant",
-   *   "message": { "content": [...] },
-   *   "session_id": "..."
-   * }
+   * - {"type": "system", "session_id": "..."} - セッション情報
+   * - {"type": "assistant", "message": {"content": [...]}} - 途中のアシスタント応答
+   * - {"type": "result", "result": "..."} - 最終結果（これを優先使用）
+   *
+   * 注意: assistantメッセージのtextとresultは同じ内容を含むため、
+   * resultがあればそれのみを使用し、なければassistantのテキストを使用する
    */
   private _parseJsonOutput(output: string): {
     textOutput: string;
     sessionId?: string;
   } {
     const lines = output.split('\n');
-    const textParts: string[] = [];
+    const assistantTextParts: string[] = [];
+    let finalResult: string | undefined;
     let sessionId: string | undefined;
 
     for (const line of lines) {
@@ -513,37 +515,34 @@ export class ClaudeRunner {
       try {
         const json = JSON.parse(trimmed);
 
-        // セッションIDを取得
-        if (json.session_id) {
+        // セッションIDを取得（systemイベントから）
+        if (json.type === 'system' && json.session_id) {
           sessionId = json.session_id;
         }
 
-        // テキストコンテンツを抽出
+        // テキストコンテンツを抽出（resultがない場合のフォールバック用）
         if (json.type === 'assistant' && json.message?.content) {
           for (const block of json.message.content) {
             if (block.type === 'text' && block.text) {
-              textParts.push(block.text);
+              assistantTextParts.push(block.text);
             }
           }
         }
 
-        // resultフィールドがある場合（最終出力）
-        if (json.result) {
-          textParts.push(json.result);
-        }
-
-        // 直接textフィールドがある場合
-        if (json.text && typeof json.text === 'string') {
-          textParts.push(json.text);
+        // resultフィールドがある場合（最終出力）- これを優先
+        if (json.type === 'result' && json.result) {
+          finalResult = json.result;
         }
       } catch {
-        // JSONでない行はそのまま出力に追加
-        textParts.push(trimmed);
+        // JSONでない行は無視（stream-json形式では発生しないはず）
       }
     }
 
+    // resultがあればそれを使用、なければassistantのテキストを結合
+    const textOutput = finalResult ?? assistantTextParts.join('\n');
+
     return {
-      textOutput: textParts.join('\n'),
+      textOutput,
       sessionId,
     };
   }
