@@ -138,6 +138,13 @@ export class ClaudeRunner {
       args.push('--output-format', 'stream-json');
       args.push('--verbose');
 
+      // sumomoのreposディレクトリへのアクセスを許可
+      // worktree外のファイル（親リポジトリなど）へのアクセスに必要
+      const reposDir = options.workingDirectory.split('/.worktrees/')[0];
+      if (reposDir && reposDir !== options.workingDirectory) {
+        args.push('--add-dir', reposDir);
+      }
+
       // Claude CLI を起動
       // CLAUDE_PROJECT_DIR を明示的に設定してworktree側の.claude/設定を使用する
       const claudeProcess = spawn(
