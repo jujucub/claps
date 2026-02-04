@@ -860,6 +860,12 @@ export async function RequestApproval(
   threadTs?: string,
   requestedBySlackId?: string
 ): Promise<ApprovalResult> {
+  // スレッドに投稿されるか確認用ログ
+  console.log(`RequestApproval: channelId=${channelId}, threadTs=${threadTs ?? 'undefined'}`);
+  if (!threadTs) {
+    console.warn(`WARNING: RequestApproval called without threadTs - message will go to channel`);
+  }
+
   return new Promise((resolve) => {
     // 先に承認待ちとして登録（ボタンクリック時に参照できるように）
     _pendingApprovals.set(requestId, {
@@ -878,7 +884,7 @@ export async function RequestApproval(
       ? `<@${requestedBySlackId}> 承認をお願いするのでーす！`
       : '';
 
-    // Slack にメッセージを送信
+    // Slack にメッセージを送信（threadTs がある場合はスレッドに投稿）
     void app.client.chat.postMessage({
       channel: channelId,
       thread_ts: threadTs,

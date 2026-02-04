@@ -279,8 +279,14 @@ async function ProcessNextTask(): Promise<void> {
         let lastWorkLogTime = 0;
 
         const onWorkLog = async (log: WorkLog) => {
+          // 投稿するログタイプを絞る：現在何をしているか（tool_start）と許可・不許可（approval_pending）のみ
+          if (log.type !== 'tool_start' && log.type !== 'approval_pending') {
+            return;
+          }
+
           const now = Date.now();
-          if (log.type !== 'error' && log.type !== 'approval_pending') {
+          // approval_pending は常に投稿、それ以外は間隔を空ける
+          if (log.type !== 'approval_pending') {
             if (now - lastWorkLogTime < WORK_LOG_INTERVAL_MS) return;
           }
           lastWorkLogTime = now;
@@ -412,8 +418,14 @@ async function ProcessSlackAsIssueTask(
     let lastWorkLogTime = 0;
 
     const onTmuxWorkLog = async (log: TmuxWorkLog) => {
+      // 投稿するログタイプを絞る：現在何をしているか（tool_start）と許可・不許可（approval_pending）のみ
+      if (log.type !== 'tool_start' && log.type !== 'approval_pending') {
+        return;
+      }
+
       const now = Date.now();
-      if (log.type !== 'error' && log.type !== 'approval_pending') {
+      // approval_pending は常に投稿、それ以外は間隔を空ける
+      if (log.type !== 'approval_pending') {
         if (now - lastWorkLogTime < WORK_LOG_INTERVAL_MS) return;
       }
       lastWorkLogTime = now;
@@ -438,7 +450,7 @@ async function ProcessSlackAsIssueTask(
       slackMeta.channelId,
       slackMeta.threadTs,
       _config!.githubRepos
-    );
+    ) + BuildExitMarkerInstruction();
 
     // tmux経由で対話モードで実行（権限リクエストを自動処理）
     const runResult = await RunWithTmux(
@@ -554,8 +566,14 @@ async function ProcessSlackWithTargetRepo(
     let lastWorkLogTime = 0;
 
     const onTmuxWorkLog = async (log: TmuxWorkLog) => {
+      // 投稿するログタイプを絞る：現在何をしているか（tool_start）と許可・不許可（approval_pending）のみ
+      if (log.type !== 'tool_start' && log.type !== 'approval_pending') {
+        return;
+      }
+
       const now = Date.now();
-      if (log.type !== 'error' && log.type !== 'approval_pending') {
+      // approval_pending は常に投稿、それ以外は間隔を空ける
+      if (log.type !== 'approval_pending') {
         if (now - lastWorkLogTime < WORK_LOG_INTERVAL_MS) return;
       }
       lastWorkLogTime = now;
@@ -692,8 +710,14 @@ async function ProcessGitHubTask(
 
     // Claude CLI を tmux 経由で実行（対話モード）
     const onTmuxWorkLog = async (log: TmuxWorkLog) => {
+      // 投稿するログタイプを絞る：現在何をしているか（tool_start）と許可・不許可（approval_pending）のみ
+      if (log.type !== 'tool_start' && log.type !== 'approval_pending') {
+        return;
+      }
+
       const now = Date.now();
-      if (log.type !== 'error' && log.type !== 'approval_pending') {
+      // approval_pending は常に投稿、それ以外は間隔を空ける
+      if (log.type !== 'approval_pending') {
         if (now - lastWorkLogTime < WORK_LOG_INTERVAL_MS) return;
       }
       lastWorkLogTime = now;
@@ -839,6 +863,22 @@ ${reposList}
 }
 
 /**
+ * 終了マーカー指示を追加する
+ */
+function BuildExitMarkerInstruction(): string {
+  return `
+
+---
+【重要】処理完了時の指示:
+すべての処理が完了したら、最後に以下のコマンドを実行してください:
+\`\`\`bash
+echo "SUMOMO_EXIT"
+\`\`\`
+これにより処理の完了を検出できます。途中で終了しないでください。
+---`;
+}
+
+/**
  * 指定リポジトリでのSlackコンテキスト情報をプロンプトに追加する
  */
 function BuildSlackRepoContext(
@@ -863,7 +903,7 @@ Slackコンテキスト情報:
 目標:
 - リクエストされた内容を実装してください
 - 実装が完了したら、コミットしてPull Requestを作成してください
----`;
+---` + BuildExitMarkerInstruction();
 }
 
 /**
@@ -892,7 +932,7 @@ ${slackThreadTs ? `- Thread TS: ${slackThreadTs}` : ''}
 - このIssueを解決するコードを実装してください
 - 実装が完了したら、コミットしてPull Requestを作成してください
 - PRのタイトルには Issue番号を含めてください（例: fix: #${meta.issueNumber} - 説明）
----`;
+---` + BuildExitMarkerInstruction();
 }
 
 /**

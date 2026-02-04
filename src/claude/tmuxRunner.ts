@@ -59,14 +59,8 @@ const OTHER_MCP_PATTERN = /mcp__[\w-]+__[\w-]+/;
 // 権限リクエスト検出パターン
 const PERMISSION_REQUEST_PATTERN = /Allow\s+([\w_-]+)/i;
 
-// Claude CLI 終了検出パターン
-const FINISH_PATTERNS = [
-  /\$\s*$/m,
-  /❯\s*$/m,
-  />\s*$/m,
-  /zsh\s*$/m,
-  /bash.*\$\s*$/m,
-];
+// Claude CLI 終了検出パターン（プロンプトで指示した終了マーカー）
+const FINISH_PATTERN = /SUMOMO_EXIT/;
 
 // PR URL 抽出パターン
 const PR_URL_PATTERN = /https:\/\/github\.com\/[^\/]+\/[^\/]+\/pull\/\d+/;
@@ -156,7 +150,7 @@ export async function RunWithTmux(
           }
         }
 
-        // Claude CLI が終了したかチェック
+        // Claude CLI が終了したかチェック（SUMOMO_EXIT マーカーを検出）
         if (IsClaudeFinished(currentOutput)) {
           isRunning = false;
           clearTimeout(timeoutHandle);
@@ -239,6 +233,8 @@ async function HandlePermissionRequest(
   if (OTHER_MCP_PATTERN.test(toolName)) {
     if (options.slackApp && options.slackChannelId) {
       console.log(`Requesting Slack approval for MCP tool: ${toolName}`);
+      console.log(`  - slackChannelId: ${options.slackChannelId}`);
+      console.log(`  - slackThreadTs: ${options.slackThreadTs ?? 'undefined'}`);
 
       // 作業ログで承認待ちを通知
       if (options.onWorkLog) {
@@ -253,6 +249,10 @@ async function HandlePermissionRequest(
 
       try {
         const requestId = uuidv4();
+        // threadTs が必ず渡されるようにする（スレッドへ投稿するため）
+        if (!options.slackThreadTs) {
+          console.warn(`WARNING: slackThreadTs is undefined for approval request`);
+        }
         const result = await RequestApproval(
           options.slackApp,
           options.slackChannelId,
@@ -299,21 +299,13 @@ async function HandlePermissionRequest(
 
 /**
  * Claude CLI が終了したかチェック
+ * Claude がプロンプトの指示に従って出力する SUMOMO_EXIT マーカーを検出
  */
 function IsClaudeFinished(output: string): boolean {
-  const lines = output.split('\n');
-  const lastLines = lines.slice(-5).join('\n');
-
-  // Claude CLI が終了してシェルプロンプトに戻ったかチェック
-  for (const pattern of FINISH_PATTERNS) {
-    if (pattern.test(lastLines)) {
-      // Claude の出力が一定量あった後にシェルプロンプトが表示された場合
-      if (lines.length > 20) {
-        return true;
-      }
-    }
+  if (FINISH_PATTERN.test(output)) {
+    console.log(`Claude finished: SUMOMO_EXIT marker detected`);
+    return true;
   }
-
   return false;
 }
 
