@@ -59,8 +59,6 @@ const OTHER_MCP_PATTERN = /mcp__[\w-]+__[\w-]+/;
 // 権限リクエスト検出パターン
 const PERMISSION_REQUEST_PATTERN = /Allow\s+([\w_-]+)/i;
 
-// Claude CLI 終了検出パターン（プロンプトで指示した終了マーカー）
-const FINISH_PATTERN = /SUMOMO_EXIT/;
 
 // PR URL 抽出パターン
 const PR_URL_PATTERN = /https:\/\/github\.com\/[^\/]+\/[^\/]+\/pull\/\d+/;
@@ -300,9 +298,16 @@ async function HandlePermissionRequest(
 /**
  * Claude CLI が終了したかチェック
  * Claude がプロンプトの指示に従って出力する SUMOMO_EXIT マーカーを検出
+ * プロンプト自体にマーカーが含まれるため、出力の最後の部分のみをチェック
  */
 function IsClaudeFinished(output: string): boolean {
-  if (FINISH_PATTERN.test(output)) {
+  // 出力の最後の20行のみをチェック（プロンプト部分を除外）
+  const lines = output.split('\n');
+  const lastLines = lines.slice(-20).join('\n');
+
+  // echo "SUMOMO_EXIT" の実行結果として単独行で出力された場合を検出
+  // プロンプト内の `echo "SUMOMO_EXIT"` とは区別するため、行頭から始まるパターンを使用
+  if (/^SUMOMO_EXIT$/m.test(lastLines)) {
     console.log(`Claude finished: SUMOMO_EXIT marker detected`);
     return true;
   }
