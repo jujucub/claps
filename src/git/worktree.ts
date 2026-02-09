@@ -432,7 +432,7 @@ const WORKSPACE_CLAUDE_MD = `# Sumomo Workspace
 
 /**
  * 汎用ワークスペースを初期化する
- * git init、hook設定注入、スターター CLAUDE.md の配置を行う
+ * git init、hook設定注入、スターター CLAUDE.md の配置、プロジェクトプリウォームを行う
  * Claude CLI がプロジェクト設定（.claude/settings.json）を認識するには
  * git リポジトリである必要がある
  */
@@ -453,5 +453,41 @@ export async function InitializeWorkspace(workspacePath: string): Promise<void> 
   const claudeMdPath = path.join(workspacePath, 'CLAUDE.md');
   if (!fs.existsSync(claudeMdPath)) {
     fs.writeFileSync(claudeMdPath, WORKSPACE_CLAUDE_MD);
+  }
+
+  // Claude CLI のプロジェクト初期化（初回のみ）
+  // --dangerously-skip-permissions の初回起動ではhookが発火しないバグがあるため、
+  // 事前に通常モードでダミーセッションを実行してプロジェクトを認識させる
+  await WarmUpClaudeProject(workspacePath);
+}
+
+/**
+ * Claude CLI にプロジェクトを認識させるためのダミーセッションを実行する
+ * 初回のみ実行し、マーカーファイルで完了を記録する
+ */
+async function WarmUpClaudeProject(workspacePath: string): Promise<void> {
+  const markerPath = path.join(workspacePath, '.claude', '.warmup-done');
+  if (fs.existsSync(markerPath)) {
+    return;
+  }
+
+  console.log('Warming up Claude CLI project for workspace...');
+  try {
+    // 通常モード（--dangerously-skip-permissions なし）でダミーセッションを実行
+    // "ok" に対してClaudeはツールを使わずテキストで応答するだけなので高速
+    execSync('claude -p "ok" --output-format json', {
+      cwd: workspacePath,
+      env: {
+        ...process.env,
+        CLAUDE_PROJECT_DIR: workspacePath,
+      },
+      stdio: 'pipe',
+      timeout: 60000,
+    });
+
+    fs.writeFileSync(markerPath, new Date().toISOString());
+    console.log('Claude CLI project warmup completed');
+  } catch (error) {
+    console.warn('Claude CLI project warmup failed (hooks may not work on first run):', error);
   }
 }

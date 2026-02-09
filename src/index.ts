@@ -54,7 +54,6 @@ import {
   GetAdminSlackUser,
 } from './admin/store.js';
 import { SetupGlobalMcpConfig } from './mcp/setup.js';
-import { SetupGlobalHooks } from './hooks/setup.js';
 
 // 作業ログの投稿間隔（ミリ秒）
 const WORK_LOG_INTERVAL_MS = 10000;
@@ -77,9 +76,6 @@ async function Start(): Promise<void> {
 
   // MCP設定をセットアップ（~/.claude.jsonに追加）
   SetupGlobalMcpConfig();
-
-  // グローバルhookを設定（~/.claude/settings.jsonに追加）
-  SetupGlobalHooks();
 
   // 汎用ワークスペースを初期化（hook設定を注入）
   const workspacePath = GetWorkspacePath();
