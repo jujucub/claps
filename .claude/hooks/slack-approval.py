@@ -52,15 +52,20 @@ def get_auth_token() -> str:
         return ''
 
 
-def main():
-    """メインエントリーポイント"""
-    # デバッグ: 常にログを書き出す
+def _debug_log(msg: str):
+    """デバッグログを /tmp に書き出す"""
     import datetime
     with open('/tmp/sumomo-hook-debug.log', 'a') as f:
-        f.write(f"{datetime.datetime.now()} TASK_ID='{TASK_ID}' APPROVAL_URL='{APPROVAL_SERVER_URL}'\n")
+        f.write(f"{datetime.datetime.now()} {msg}\n")
+
+
+def main():
+    """メインエントリーポイント"""
+    _debug_log(f"[START] TASK_ID='{TASK_ID}' APPROVAL_URL='{APPROVAL_SERVER_URL}'")
 
     # sumomoタスクIDがなければ何もしない（ローカル開発時等）
     if not TASK_ID:
+        _debug_log("[EXIT] No TASK_ID, exiting")
         exit(0)
 
     print("[Hook] slack-approval.py started", file=sys.stderr)
@@ -69,36 +74,36 @@ def main():
     try:
         input_data = json.load(sys.stdin)
     except json.JSONDecodeError:
-        print("[Hook] JSON parse error, denying for safety", file=sys.stderr)
+        _debug_log("[ERROR] JSON parse error")
         output_result("deny", "JSON parse error")
         return
 
     tool_name = input_data.get('tool_name', '')
     tool_input = input_data.get('tool_input', {})
-    print(f"[Hook] tool_name={tool_name}, task_id={TASK_ID}", file=sys.stderr)
+    _debug_log(f"[TOOL] tool_name='{tool_name}'")
 
     # 安全なツールは即許可
     if tool_name in SAFE_TOOLS:
-        print(f"[Hook] Safe tool, auto-allowing: {tool_name}", file=sys.stderr)
+        _debug_log(f"[ALLOW] Safe tool: {tool_name}")
         output_result("allow")
         return
 
     # mcp__sumomo-* ツールは即許可
     if tool_name.startswith('mcp__sumomo-'):
-        print(f"[Hook] Sumomo MCP tool, auto-allowing: {tool_name}", file=sys.stderr)
+        _debug_log(f"[ALLOW] MCP tool: {tool_name}")
         output_result("allow")
         return
 
     # その他のツールは承認サーバーに問い合わせ
+    _debug_log(f"[APPROVAL] Requesting approval for: {tool_name}")
     try:
         result = request_approval(tool_name, tool_input)
         decision = result.get("permissionDecision", "deny")
         reason = result.get("message", "")
-        print(f"[Hook] Server decision: {decision} ({reason})", file=sys.stderr)
+        _debug_log(f"[RESULT] decision='{decision}' reason='{reason}'")
         output_result(decision, reason)
     except Exception as e:
-        print(f"[Hook] Approval request failed: {e}", file=sys.stderr)
-        # エラーの場合は拒否（安全側）
+        _debug_log(f"[ERROR] Approval failed: {e}")
         output_result("deny", f"Approval request failed: {str(e)}")
 
 
