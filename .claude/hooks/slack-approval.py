@@ -54,6 +54,11 @@ def get_auth_token() -> str:
 
 def main():
     """メインエントリーポイント"""
+    # デバッグ: 常にログを書き出す
+    import datetime
+    with open('/tmp/sumomo-hook-debug.log', 'a') as f:
+        f.write(f"{datetime.datetime.now()} TASK_ID='{TASK_ID}' APPROVAL_URL='{APPROVAL_SERVER_URL}'\n")
+
     # sumomoタスクIDがなければ何もしない（ローカル開発時等）
     if not TASK_ID:
         exit(0)
