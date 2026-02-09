@@ -15,8 +15,8 @@ const SUMOMO_APPROVAL_HOOK_CONFIG = {
   hooks: [
     {
       type: 'command',
-      command: 'python3 $CLAUDE_PROJECT_DIR/.claude/hooks/slack-approval.py',
-      timeout: 320000,
+      command: 'python3 "$CLAUDE_PROJECT_DIR"/.claude/hooks/slack-approval.py',
+      timeout: 320,
     },
   ],
 };
@@ -27,8 +27,8 @@ const SUMOMO_NOTIFY_HOOK_CONFIG = {
   hooks: [
     {
       type: 'command',
-      command: 'bash $CLAUDE_PROJECT_DIR/.claude/hooks/tool-notify.sh',
-      timeout: 5000,
+      command: 'bash "$CLAUDE_PROJECT_DIR"/.claude/hooks/tool-notify.sh',
+      timeout: 5,
     },
   ],
 };
