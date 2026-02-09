@@ -91,13 +91,6 @@ const _autoApproveCounter = new Map<string, number>();
 const WORK_LOG_INTERVAL_MS = 10000;
 let _lastWorkLogTime = 0;
 
-// 承認が必要なコマンドパターン
-const DANGEROUS_BASH_PATTERNS = [
-  /\bgit\s+push\b/,
-  /\bgit\s+commit\b/,
-  /\brm\s+/,
-  /\bnpm\s+publish\b/,
-];
 
 /**
  * 承認サーバーを初期化する
@@ -415,30 +408,26 @@ function GetToolDetails(toolName: string, toolInput: Record<string, unknown>): s
 }
 
 /**
+ * 承認が必要なツール
+ * これらのツールはファイル変更やコマンド実行など副作用を伴うため、
+ * 初回使用時にSlack承認を求める（同一タスク内では自動承認）
+ */
+const TOOLS_REQUIRING_APPROVAL = new Set([
+  'Bash',
+  'Write',
+  'Edit',
+  'Task',
+  'NotebookEdit',
+]);
+
+/**
  * 承認が必要かどうかを判定する
  */
 function CheckNeedsApproval(
   toolName: string,
-  toolInput: Record<string, unknown>
+  _toolInput: Record<string, unknown>
 ): boolean {
-  // Write と Edit は常に承認が必要
-  if (toolName === 'Write' || toolName === 'Edit') {
-    return true;
-  }
-
-  // Bash コマンドの場合
-  if (toolName === 'Bash') {
-    const command = toolInput['command'] as string | undefined;
-    if (!command) return false;
-
-    for (const pattern of DANGEROUS_BASH_PATTERNS) {
-      if (pattern.test(command)) {
-        return true;
-      }
-    }
-  }
-
-  return false;
+  return TOOLS_REQUIRING_APPROVAL.has(toolName);
 }
 
 /**
