@@ -324,7 +324,7 @@ export async function CleanupAllWorktrees(): Promise<void> {
  * worktree に sumomo の .claude 設定を注入する
  * 既存の settings.json がある場合はマージする
  */
-async function InjectClaudeSettings(worktreeDir: string): Promise<void> {
+export async function InjectClaudeSettings(worktreeDir: string): Promise<void> {
   const claudeDir = path.join(worktreeDir, '.claude');
   const hooksDir = path.join(claudeDir, 'hooks');
   const settingsPath = path.join(claudeDir, 'settings.json');
@@ -417,4 +417,32 @@ async function InjectClaudeSettings(worktreeDir: string): Promise<void> {
   }
 
   console.log(`Injected sumomo .claude settings into ${worktreeDir}`);
+}
+
+// ワークスペース用のスターター CLAUDE.md
+const WORKSPACE_CLAUDE_MD = `# Sumomo Workspace
+
+このディレクトリは sumomo の汎用ワークスペースです。
+リポジトリ指定なしの Slack タスクがここで実行されます。
+
+## 注意事項
+- このディレクトリにはリポジトリのコードはありません
+- 調査・質問応答・一般的なタスクに使用されます
+`;
+
+/**
+ * 汎用ワークスペースを初期化する
+ * ディレクトリ作成、hook設定注入、スターター CLAUDE.md の配置を行う
+ */
+export async function InitializeWorkspace(workspacePath: string): Promise<void> {
+  if (!fs.existsSync(workspacePath)) {
+    fs.mkdirSync(workspacePath, { recursive: true });
+  }
+  await InjectClaudeSettings(workspacePath);
+
+  // スターター CLAUDE.md を作成（初回のみ）
+  const claudeMdPath = path.join(workspacePath, 'CLAUDE.md');
+  if (!fs.existsSync(claudeMdPath)) {
+    fs.writeFileSync(claudeMdPath, WORKSPACE_CLAUDE_MD);
+  }
 }

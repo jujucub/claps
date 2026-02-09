@@ -27,6 +27,15 @@ export function GetRepoPath(owner: string, repo: string): string {
 }
 
 /**
+ * 汎用ワークスペースのパスを取得する
+ * リポジトリ指定なしの Slack タスクで使用する作業ディレクトリ
+ * @returns .sumomo/workspace のパス
+ */
+export function GetWorkspacePath(): string {
+  return path.join(GetSumomoDir(), 'workspace');
+}
+
+/**
  * リポジトリをクローンまたは更新する
  * - リポジトリがクローン済みなら fetch して最新化
  * - 未クローンなら git clone を実行

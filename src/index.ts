@@ -41,8 +41,9 @@ import {
   CleanupAllWorktrees,
   GetOrCreateWorktree,
   RemoveWorktree,
+  InitializeWorkspace,
 } from './git/worktree.js';
-import { GetOrCloneRepo } from './git/repo.js';
+import { GetOrCloneRepo, GetWorkspacePath } from './git/repo.js';
 import {
   InitAdminServer,
   StartAdminServer,
@@ -75,6 +76,10 @@ async function Start(): Promise<void> {
 
   // MCP設定をセットアップ（~/.claude.jsonに追加）
   SetupGlobalMcpConfig();
+
+  // 汎用ワークスペースを初期化（hook設定を注入）
+  const workspacePath = GetWorkspacePath();
+  await InitializeWorkspace(workspacePath);
 
   // コンポーネントを初期化
   _taskQueue = GetTaskQueue();
@@ -282,9 +287,10 @@ async function ProcessNextTask(): Promise<void> {
         );
 
         const runResult = await _claudeRunner.Run(task.id, promptWithContext, {
-          workingDirectory: process.cwd(),
+          workingDirectory: GetWorkspacePath(),
           onWorkLog,
           resumeSessionId: existingSessionId,
+          approvalServerPort: _config.approvalServerPort,
         });
 
         // 新しいセッションIDが返された場合は保存
