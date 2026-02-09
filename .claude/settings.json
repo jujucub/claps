@@ -1,17 +1,7 @@
 {
   "hooks": {
     "PreToolUse": [
-      {
-        "matcher": "Bash|Write|Edit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 $CLAUDE_PROJECT_DIR/.claude/hooks/slack-approval.py",
-            "timeout": 320000
-          }
-        ]
-      }
-    ]
+   ]
   },
   "mcpServers": {
     "ask-human": {

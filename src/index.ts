@@ -4,10 +4,10 @@
  */
 
 import { LoadConfig } from './config.js';
+import type { App } from '@slack/bolt';
 import type { Config, GitHubTaskMetadata, SlackTaskMetadata, Task } from './types/index.js';
 import { GetTaskQueue, type TaskQueue } from './queue/taskQueue.js';
 import { GetClaudeRunner, type ClaudeRunner, type WorkLog } from './claude/runner.js';
-import { RunWithTmux, type WorkLog as TmuxWorkLog } from './claude/tmuxRunner.js';
 import { GetSessionStore } from './session/store.js';
 import {
   InitSlackBot,
@@ -43,7 +43,6 @@ import {
   RemoveWorktree,
 } from './git/worktree.js';
 import { GetOrCloneRepo } from './git/repo.js';
-import { CleanupAllSessions } from './tmux/session.js';
 import {
   InitAdminServer,
   StartAdminServer,
@@ -121,9 +120,6 @@ async function Stop(): Promise<void> {
 
   // worktree をクリーンアップ
   await CleanupAllWorktrees();
-
-  // tmuxセッションをクリーンアップ
-  CleanupAllSessions();
 
   console.log('🍑 すもも、おやすみなさいなのです！');
 }
@@ -275,35 +271,7 @@ async function ProcessNextTask(): Promise<void> {
           console.log(`Creating new session for thread ${slackMeta.threadTs}`);
         }
 
-        // 作業ログを Slack に投稿するコールバック
-        let lastWorkLogTime = 0;
-
-        const onWorkLog = async (log: WorkLog) => {
-          // 投稿するログタイプを絞る：現在何をしているか（tool_start）と許可・不許可（approval_pending）のみ
-          if (log.type !== 'tool_start' && log.type !== 'approval_pending') {
-            return;
-          }
-
-          const now = Date.now();
-          // approval_pending は常に投稿、それ以外は間隔を空ける
-          if (log.type !== 'approval_pending') {
-            if (now - lastWorkLogTime < WORK_LOG_INTERVAL_MS) return;
-          }
-          lastWorkLogTime = now;
-
-          try {
-            await NotifyWorkLog(
-              slackApp,
-              _config!.slackChannelId,
-              log.type,
-              log.message,
-              log.details,
-              slackMeta.threadTs
-            );
-          } catch (e) {
-            console.error('Failed to post work log to Slack:', e);
-          }
-        };
+        const onWorkLog = CreateWorkLogCallback(slackApp, _config!.slackChannelId, slackMeta.threadTs);
 
         // Slackコンテキストをプロンプトに追加
         const promptWithContext = task.prompt + BuildSlackContext(
@@ -414,35 +382,7 @@ async function ProcessSlackAsIssueTask(
       console.log(`Creating new session for issue #${issueInfo.issueNumber}`);
     }
 
-    // 作業ログを Slack に投稿するコールバック
-    let lastWorkLogTime = 0;
-
-    const onTmuxWorkLog = async (log: TmuxWorkLog) => {
-      // 投稿するログタイプを絞る：現在何をしているか（tool_start）と許可・不許可（approval_pending）のみ
-      if (log.type !== 'tool_start' && log.type !== 'approval_pending') {
-        return;
-      }
-
-      const now = Date.now();
-      // approval_pending は常に投稿、それ以外は間隔を空ける
-      if (log.type !== 'approval_pending') {
-        if (now - lastWorkLogTime < WORK_LOG_INTERVAL_MS) return;
-      }
-      lastWorkLogTime = now;
-
-      try {
-        await NotifyWorkLog(
-          slackApp,
-          _config!.slackChannelId,
-          log.type,
-          log.message,
-          log.details,
-          slackMeta.threadTs
-        );
-      } catch (e) {
-        console.error('Failed to post work log to Slack:', e);
-      }
-    };
+    const onWorkLog = CreateWorkLogCallback(slackApp, _config!.slackChannelId, slackMeta.threadTs);
 
     // Slackコンテキストをプロンプトに追加して Claude CLI を実行
     const promptWithContext = task.prompt + BuildSlackContext(
@@ -450,24 +390,19 @@ async function ProcessSlackAsIssueTask(
       slackMeta.channelId,
       slackMeta.threadTs,
       _config!.githubRepos
-    ) + BuildExitMarkerInstruction();
-
-    // tmux経由で対話モードで実行（権限リクエストを自動処理）
-    const runResult = await RunWithTmux(
-      task.id,
-      promptWithContext,
-      issueInfo.owner,
-      issueInfo.repo,
-      issueInfo.issueNumber,
-      {
-        workingDirectory: worktreeInfo.worktreePath,
-        onWorkLog: onTmuxWorkLog,
-        slackApp,
-        slackChannelId: _config.slackChannelId,
-        slackThreadTs: slackMeta.threadTs,
-        requestedBySlackId: slackMeta.userId,
-      }
     );
+
+    const runResult = await _claudeRunner.Run(task.id, promptWithContext, {
+      workingDirectory: worktreeInfo.worktreePath,
+      onWorkLog,
+      resumeSessionId: existingSessionId,
+      approvalServerPort: _config.approvalServerPort,
+    });
+
+    // セッションIDを保存
+    if (runResult.sessionId) {
+      sessionStore.SetForIssue(issueInfo.owner, issueInfo.repo, issueInfo.issueNumber, runResult.sessionId);
+    }
 
     // 変更があればコミット＆プッシュ
     const commitMessage = `fix: Issue #${issueInfo.issueNumber} - additional changes`;
@@ -562,35 +497,7 @@ async function ProcessSlackWithTargetRepo(
       console.log(`Creating new session for thread ${slackMeta.threadTs}`);
     }
 
-    // 作業ログを Slack に投稿するコールバック
-    let lastWorkLogTime = 0;
-
-    const onTmuxWorkLog = async (log: TmuxWorkLog) => {
-      // 投稿するログタイプを絞る：現在何をしているか（tool_start）と許可・不許可（approval_pending）のみ
-      if (log.type !== 'tool_start' && log.type !== 'approval_pending') {
-        return;
-      }
-
-      const now = Date.now();
-      // approval_pending は常に投稿、それ以外は間隔を空ける
-      if (log.type !== 'approval_pending') {
-        if (now - lastWorkLogTime < WORK_LOG_INTERVAL_MS) return;
-      }
-      lastWorkLogTime = now;
-
-      try {
-        await NotifyWorkLog(
-          slackApp,
-          _config!.slackChannelId,
-          log.type,
-          log.message,
-          log.details,
-          slackMeta.threadTs
-        );
-      } catch (e) {
-        console.error('Failed to post work log to Slack:', e);
-      }
-    };
+    const onWorkLog = CreateWorkLogCallback(slackApp, _config!.slackChannelId, slackMeta.threadTs);
 
     // コンテキストをプロンプトに追加
     const promptWithContext = task.prompt + BuildSlackRepoContext(
@@ -601,22 +508,12 @@ async function ProcessSlackWithTargetRepo(
       worktreeInfo.branchName
     );
 
-    // tmux経由で対話モードで実行（権限リクエストを自動処理）
-    const runResult = await RunWithTmux(
-      task.id,
-      promptWithContext,
-      owner,
-      repo,
-      worktreeIdentifier,
-      {
-        workingDirectory: worktreeInfo.worktreePath,
-        onWorkLog: onTmuxWorkLog,
-        slackApp,
-        slackChannelId: _config.slackChannelId,
-        slackThreadTs: slackMeta.threadTs,
-        requestedBySlackId: slackMeta.userId,
-      }
-    );
+    const runResult = await _claudeRunner.Run(task.id, promptWithContext, {
+      workingDirectory: worktreeInfo.worktreePath,
+      onWorkLog,
+      resumeSessionId: existingSessionId,
+      approvalServerPort: _config.approvalServerPort,
+    });
 
     return {
       success: runResult.success,
@@ -705,55 +602,19 @@ async function ProcessGitHubTask(
 
     await NotifyProgress(slackApp, _config.slackChannelId, 'Claude を起動中なのでーす！', threadTs);
 
-    // 作業ログを Slack に投稿するコールバック
-    let lastWorkLogTime = 0;
+    const onWorkLog = CreateWorkLogCallback(slackApp, _config!.slackChannelId, threadTs);
 
-    // Claude CLI を tmux 経由で実行（対話モード）
-    const onTmuxWorkLog = async (log: TmuxWorkLog) => {
-      // 投稿するログタイプを絞る：現在何をしているか（tool_start）と許可・不許可（approval_pending）のみ
-      if (log.type !== 'tool_start' && log.type !== 'approval_pending') {
-        return;
-      }
+    const runResult = await _claudeRunner.Run(task.id, worktreePrompt, {
+      workingDirectory: worktreeInfo.worktreePath,
+      onWorkLog,
+      resumeSessionId: existingSessionId,
+      approvalServerPort: _config.approvalServerPort,
+    });
 
-      const now = Date.now();
-      // approval_pending は常に投稿、それ以外は間隔を空ける
-      if (log.type !== 'approval_pending') {
-        if (now - lastWorkLogTime < WORK_LOG_INTERVAL_MS) return;
-      }
-      lastWorkLogTime = now;
-
-      try {
-        await NotifyWorkLog(
-          slackApp,
-          _config!.slackChannelId,
-          log.type,
-          log.message,
-          log.details,
-          threadTs
-        );
-      } catch (e) {
-        console.error('Failed to post work log to Slack:', e);
-      }
-    };
-
-    // 承認権限を持つユーザーIDを取得
-    const requestedBySlackId = GetRequestedBySlackId(task);
-
-    const runResult = await RunWithTmux(
-      task.id,
-      worktreePrompt,
-      meta.owner,
-      meta.repo,
-      meta.issueNumber,
-      {
-        workingDirectory: worktreeInfo.worktreePath,
-        onWorkLog: onTmuxWorkLog,
-        slackApp,
-        slackChannelId: _config.slackChannelId,
-        slackThreadTs: threadTs,
-        requestedBySlackId,
-      }
-    );
+    // セッションIDを保存
+    if (runResult.sessionId) {
+      sessionStore.SetForIssue(meta.owner, meta.repo, meta.issueNumber, runResult.sessionId);
+    }
 
     // Claude CLIの結果をそのまま返す（コミット・PR作成はLLMが判断して実行）
     return {
@@ -863,22 +724,6 @@ ${reposList}
 }
 
 /**
- * 終了マーカー指示を追加する
- */
-function BuildExitMarkerInstruction(): string {
-  return `
-
----
-【重要】処理完了時の指示:
-すべての処理が完了したら、最後に以下のコマンドを実行してください:
-\`\`\`bash
-echo "SUMOMO_EXIT"
-\`\`\`
-これにより処理の完了を検出できます。途中で終了しないでください。
----`;
-}
-
-/**
  * 指定リポジトリでのSlackコンテキスト情報をプロンプトに追加する
  */
 function BuildSlackRepoContext(
@@ -903,7 +748,7 @@ Slackコンテキスト情報:
 目標:
 - リクエストされた内容を実装してください
 - 実装が完了したら、コミットしてPull Requestを作成してください
----` + BuildExitMarkerInstruction();
+---`;
 }
 
 /**
@@ -932,7 +777,45 @@ ${slackThreadTs ? `- Thread TS: ${slackThreadTs}` : ''}
 - このIssueを解決するコードを実装してください
 - 実装が完了したら、コミットしてPull Requestを作成してください
 - PRのタイトルには Issue番号を含めてください（例: fix: #${meta.issueNumber} - 説明）
----` + BuildExitMarkerInstruction();
+---`;
+}
+
+/**
+ * 作業ログを Slack に投稿するコールバックを生成する
+ */
+function CreateWorkLogCallback(
+  slackApp: App,
+  channelId: string,
+  threadTs?: string
+): (log: WorkLog) => void {
+  let lastWorkLogTime = 0;
+
+  return async (log: WorkLog) => {
+    // 投稿するログタイプを絞る：現在何をしているか（tool_start）と許可・不許可（approval_pending）のみ
+    if (log.type !== 'tool_start' && log.type !== 'approval_pending') {
+      return;
+    }
+
+    const now = Date.now();
+    // approval_pending は常に投稿、それ以外は間隔を空ける
+    if (log.type !== 'approval_pending') {
+      if (now - lastWorkLogTime < WORK_LOG_INTERVAL_MS) return;
+    }
+    lastWorkLogTime = now;
+
+    try {
+      await NotifyWorkLog(
+        slackApp,
+        channelId,
+        log.type,
+        log.message,
+        log.details,
+        threadTs
+      );
+    } catch (e) {
+      console.error('Failed to post work log to Slack:', e);
+    }
+  };
 }
 
 /**

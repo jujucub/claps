@@ -12,7 +12,7 @@ import path from 'path';
 import os from 'os';
 import type { App } from '@slack/bolt';
 import type { HookInput, HookOutput } from '../types/index.js';
-import { RequestApproval, AskQuestion } from '../slack/handlers.js';
+import { RequestApproval, AskQuestion, NotifyWorkLog } from '../slack/handlers.js';
 
 // サーバー状態
 let _server: Server | undefined;
@@ -87,6 +87,10 @@ let _currentRequestedBySlackId: string | undefined;
 const _allowedToolsForTask = new Set<string>();
 const _autoApproveCounter = new Map<string, number>();
 
+// 作業ログの投稿間隔（ミリ秒）
+const WORK_LOG_INTERVAL_MS = 10000;
+let _lastWorkLogTime = 0;
+
 // 承認が必要なコマンドパターン
 const DANGEROUS_BASH_PATTERNS = [
   /\bgit\s+push\b/,
@@ -131,6 +135,22 @@ export function InitApprovalServer(
         permissionDecision: 'deny',
         message: 'Internal server error',
       });
+    }
+  });
+
+  // ツール使用通知エンドポイント（PreToolUse Hook から呼ばれる）
+  _app.post('/notify-tool', (req: Request, res: Response) => {
+    try {
+      const hookInput = req.body as HookInput;
+      if (!hookInput?.tool_name || typeof hookInput.tool_name !== 'string') {
+        res.status(400).json({ error: 'Invalid hook input' });
+        return;
+      }
+      void HandleToolNotification(hookInput);
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Tool notification error:', error);
+      res.status(500).json({ error: 'Internal server error' });
     }
   });
 
@@ -313,6 +333,88 @@ async function HandleApprovalRequest(hookInput: HookInput): Promise<HookOutput> 
 }
 
 /**
+ * ツール使用通知を処理し、Slackに作業ログを投稿する
+ */
+async function HandleToolNotification(hookInput: HookInput): Promise<void> {
+  const { tool_name, tool_input } = hookInput;
+
+  if (!_slackApp || !_slackChannelId || !_currentThreadTs) {
+    return;
+  }
+
+  // 投稿間隔を制御（10秒間隔）
+  const now = Date.now();
+  if (now - _lastWorkLogTime < WORK_LOG_INTERVAL_MS) {
+    return;
+  }
+  _lastWorkLogTime = now;
+
+  // ツール名に対応するメッセージを生成
+  const message = GetToolMessage(tool_name);
+  const details = GetToolDetails(tool_name, tool_input);
+
+  try {
+    await NotifyWorkLog(
+      _slackApp,
+      _slackChannelId,
+      'tool_start',
+      message,
+      details,
+      _currentThreadTs
+    );
+  } catch (error) {
+    console.error('Failed to post tool notification to Slack:', error);
+  }
+}
+
+/**
+ * ツール名に対応するメッセージを取得する
+ */
+function GetToolMessage(toolName: string): string {
+  const toolMessages: Record<string, string> = {
+    Read: 'ファイルを読み込み中',
+    Write: 'ファイルを作成中',
+    Edit: 'ファイルを編集中',
+    Bash: 'コマンドを実行中',
+    Glob: 'ファイルを検索中',
+    Grep: 'コードを検索中',
+    Task: 'サブタスクを実行中',
+    WebFetch: 'Webページを取得中',
+    WebSearch: 'Web検索中',
+    LSP: 'コード解析中',
+  };
+  return toolMessages[toolName] ?? `${toolName}を実行中`;
+}
+
+/**
+ * ツール入力から詳細情報を抽出する
+ */
+function GetToolDetails(toolName: string, toolInput: Record<string, unknown>): string {
+  if (toolName === 'Read' && toolInput['file_path']) {
+    return String(toolInput['file_path']);
+  }
+  if (toolName === 'Write' && toolInput['file_path']) {
+    return String(toolInput['file_path']);
+  }
+  if (toolName === 'Edit' && toolInput['file_path']) {
+    return String(toolInput['file_path']);
+  }
+  if (toolName === 'Bash' && toolInput['command']) {
+    return String(toolInput['command']).slice(0, 100);
+  }
+  if (toolName === 'Glob' && toolInput['pattern']) {
+    return String(toolInput['pattern']);
+  }
+  if (toolName === 'Grep' && toolInput['pattern']) {
+    return String(toolInput['pattern']);
+  }
+  if (toolName === 'Task' && toolInput['description']) {
+    return String(toolInput['description']);
+  }
+  return '';
+}
+
+/**
  * 承認が必要かどうかを判定する
  */
 function CheckNeedsApproval(
@@ -391,4 +493,5 @@ export function ClearCurrentTaskId(): void {
   _currentRequestedBySlackId = undefined;
   _allowedToolsForTask.clear();
   _autoApproveCounter.clear();
+  _lastWorkLogTime = 0;
 }

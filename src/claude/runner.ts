@@ -26,6 +26,7 @@ export interface RunnerOptions {
   readonly onWorkLog?: WorkLogCallback; // 作業ログコールバック
   readonly resumeSessionId?: string; // 継続するセッションID
   readonly systemPrompt?: string; // カスタムシステムプロンプト
+  readonly approvalServerPort?: number; // 承認サーバーポート
 }
 
 // スモモの口調システムプロンプト
@@ -121,6 +122,9 @@ export class ClaudeRunner {
       // コマンドライン引数を構築
       const args: string[] = [];
 
+      // 全権限をスキップ（PreToolUse Hook で制御）
+      args.push('--dangerously-skip-permissions');
+
       // セッション継続の場合は --resume を追加
       if (options.resumeSessionId) {
         args.push('--resume', options.resumeSessionId);
@@ -148,6 +152,8 @@ export class ClaudeRunner {
           env: {
             ...process.env,
             CLAUDE_PROJECT_DIR: options.workingDirectory,
+            SUMOMO_TASK_ID: taskId,
+            APPROVAL_SERVER_URL: `http://localhost:${options.approvalServerPort ?? 3001}`,
           },
           stdio: ['pipe', 'pipe', 'pipe'],
           shell: false,
@@ -288,41 +294,6 @@ export class ClaudeRunner {
         clearInterval(statusInterval);
       });
     });
-  }
-
-  /**
-   * 対話モードで Claude CLI を実行する（継続的な入出力用）
-   */
-  StartInteractive(
-    taskId: string,
-    options: RunnerOptions
-  ): {
-    process: ChildProcess;
-    sendInput: (input: string) => void;
-    stop: () => void;
-  } {
-    const claudeProcess = spawn('claude', [], {
-      cwd: options.workingDirectory,
-      env: process.env,
-      shell: true,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
-
-    this._runningProcesses.set(taskId, {
-      taskId,
-      process: claudeProcess,
-      startedAt: new Date(),
-    });
-
-    return {
-      process: claudeProcess,
-      sendInput: (input: string) => {
-        claudeProcess.stdin?.write(input + '\n');
-      },
-      stop: () => {
-        this._killProcess(taskId);
-      },
-    };
   }
 
   /**

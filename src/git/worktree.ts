@@ -8,14 +8,27 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 
-// sumomoのPreToolUseフック設定
-const SUMOMO_HOOK_CONFIG = {
-  matcher: 'Bash|Write|Edit',
+// sumomoのPreToolUseフック設定（承認用）
+// matcher空文字列で全ツールに対してHookを実行
+const SUMOMO_APPROVAL_HOOK_CONFIG = {
+  matcher: '',
   hooks: [
     {
       type: 'command',
       command: 'python3 $CLAUDE_PROJECT_DIR/.claude/hooks/slack-approval.py',
       timeout: 320000,
+    },
+  ],
+};
+
+// sumomoのPreToolUseフック設定（ツール使用通知用）
+const SUMOMO_NOTIFY_HOOK_CONFIG = {
+  matcher: '.*',
+  hooks: [
+    {
+      type: 'command',
+      command: 'bash $CLAUDE_PROJECT_DIR/.claude/hooks/tool-notify.sh',
+      timeout: 5000,
     },
   ],
 };
@@ -348,33 +361,59 @@ async function InjectClaudeSettings(worktreeDir: string): Promise<void> {
   }
   const preToolUseHooks = hooks['PreToolUse'] as Array<Record<string, unknown>>;
 
-  // sumomo の hook が既に存在するか確認
-  const hasSumomoHook = preToolUseHooks.some(
-    (hook) => hook['matcher'] === SUMOMO_HOOK_CONFIG.matcher
+  // sumomo の承認hook が既に存在するか確認（コマンド文字列で判定）
+  const hasSumomoApprovalHook = preToolUseHooks.some(
+    (hook) => {
+      const hookList = hook['hooks'] as Array<Record<string, unknown>> | undefined;
+      return hookList?.some((h) => {
+        const cmd = h['command'] as string | undefined;
+        return cmd?.includes('slack-approval.py');
+      });
+    }
   );
 
-  if (!hasSumomoHook) {
-    // sumomo の hook を追加（先頭に追加して優先度を上げる）
-    preToolUseHooks.unshift(SUMOMO_HOOK_CONFIG);
+  if (!hasSumomoApprovalHook) {
+    // sumomo の承認hook を追加（先頭に追加して優先度を上げる）
+    preToolUseHooks.unshift(SUMOMO_APPROVAL_HOOK_CONFIG);
+  }
+
+  // sumomo の通知hook が既に存在するか確認
+  const hasSumomoNotifyHook = preToolUseHooks.some(
+    (hook) => {
+      const hookList = hook['hooks'] as Array<Record<string, unknown>> | undefined;
+      return hookList?.some((h) => {
+        const cmd = h['command'] as string | undefined;
+        return cmd?.includes('tool-notify.sh');
+      });
+    }
+  );
+
+  if (!hasSumomoNotifyHook) {
+    // sumomo の通知hook を追加（末尾に追加、承認hookの後に実行）
+    preToolUseHooks.push(SUMOMO_NOTIFY_HOOK_CONFIG);
   }
 
   // settings.json を書き込み
   fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
 
-  // slack-approval.py をコピー
+  // hookスクリプトをコピー
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);
-  // dist/git/worktree.js -> ../../.claude/hooks/slack-approval.py
+  // dist/git/worktree.js -> ../../.claude/hooks/
   const sumomoRoot = path.resolve(__dirname, '..', '..');
-  const sourceHookPath = path.join(sumomoRoot, '.claude', 'hooks', 'slack-approval.py');
-  const destHookPath = path.join(hooksDir, 'slack-approval.py');
+  const hookFiles = ['slack-approval.py', 'tool-notify.sh'];
 
-  if (fs.existsSync(sourceHookPath)) {
-    fs.copyFileSync(sourceHookPath, destHookPath);
-    // 実行権限を付与
-    fs.chmodSync(destHookPath, 0o755);
-  } else {
-    console.warn(`Warning: slack-approval.py not found at ${sourceHookPath}`);
+  for (const hookFile of hookFiles) {
+    const sourceHookPath = path.join(sumomoRoot, '.claude', 'hooks', hookFile);
+    const destHookPath = path.join(hooksDir, hookFile);
+
+    if (fs.existsSync(sourceHookPath)) {
+      fs.copyFileSync(sourceHookPath, destHookPath);
+      // 実行権限を付与
+      fs.chmodSync(destHookPath, 0o755);
+    } else {
+      console.warn(`Warning: ${hookFile} not found at ${sourceHookPath}`);
+    }
   }
 
   console.log(`Injected sumomo .claude settings into ${worktreeDir}`);
