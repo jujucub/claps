@@ -432,12 +432,21 @@ const WORKSPACE_CLAUDE_MD = `# Sumomo Workspace
 
 /**
  * 汎用ワークスペースを初期化する
- * ディレクトリ作成、hook設定注入、スターター CLAUDE.md の配置を行う
+ * git init、hook設定注入、スターター CLAUDE.md の配置を行う
+ * Claude CLI がプロジェクト設定（.claude/settings.json）を認識するには
+ * git リポジトリである必要がある
  */
 export async function InitializeWorkspace(workspacePath: string): Promise<void> {
   if (!fs.existsSync(workspacePath)) {
     fs.mkdirSync(workspacePath, { recursive: true });
   }
+
+  // git リポジトリとして初期化（Claude CLI が .claude/settings.json を認識するために必須）
+  if (!fs.existsSync(path.join(workspacePath, '.git'))) {
+    execSync('git init', { cwd: workspacePath, stdio: 'pipe' });
+    console.log(`Initialized git repository in ${workspacePath}`);
+  }
+
   await InjectClaudeSettings(workspacePath);
 
   // スターター CLAUDE.md を作成（初回のみ）
