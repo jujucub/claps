@@ -153,13 +153,13 @@ export function RegisterSlackHandlers(
 → 監視リポジトリを削除
 
 \`/sumomo whitelist\`
-→ ホワイトリストを表示
+→ ホワイトリストを表示（マッピング情報含む）
 
-\`/sumomo whitelist add @user\`
-→ Slackユーザーをホワイトリストに追加
+\`/sumomo whitelist add @user [github-username]\`
+→ ユーザーをホワイトリストに追加（GitHub名を指定するとマッピングも同時作成）
 
 \`/sumomo whitelist add-github username\`
-→ GitHubユーザーをホワイトリストに追加
+→ GitHubユーザーのみをホワイトリストに追加
 
 \`/sumomo whitelist remove @user\`
 → Slackユーザーをホワイトリストから削除
@@ -291,18 +291,25 @@ export function RegisterSlackHandlers(
       if (!whitelistAction) {
         const slackUsers = config.allowedSlackUsers;
         const githubUsers = config.allowedGithubUsers;
+        const mappings = config.userMappings;
 
         let text = '🍑 *ホワイトリスト*\n\n';
         text += `*Slackユーザー* (${slackUsers.length}件):\n`;
         if (slackUsers.length > 0) {
-          text += slackUsers.map((u) => `• <@${u}>`).join('\n');
+          text += slackUsers.map((u) => {
+            const mapping = mappings.find((m) => m.slack === u);
+            return mapping ? `• <@${u}> → \`${mapping.github}\`` : `• <@${u}>`;
+          }).join('\n');
         } else {
           text += '(なし)';
         }
 
         text += `\n\n*GitHubユーザー* (${githubUsers.length}件):\n`;
         if (githubUsers.length > 0) {
-          text += githubUsers.map((u) => `• \`${u}\``).join('\n');
+          text += githubUsers.map((u) => {
+            const mapping = mappings.find((m) => m.github.toLowerCase() === u.toLowerCase());
+            return mapping ? `• \`${u}\` → <@${mapping.slack}>` : `• \`${u}\``;
+          }).join('\n');
         } else {
           text += '(なし)';
         }
@@ -314,34 +321,81 @@ export function RegisterSlackHandlers(
         return;
       }
 
-      // whitelist add @user - Slackユーザー追加
+      // whitelist add @user [github-username] - Slackユーザー追加（GitHub連携オプション付き）
       if (whitelistAction === 'add') {
         const userMention = parts[2] ?? '';
         const match = userMention.match(/<@([A-Z0-9]+)(?:\|[^>]+)?>/);
         if (!match) {
           await respond({
             response_type: 'ephemeral',
-            text: '🍑 ユーザーを@メンションで指定してくださいなのです。\n使い方: `/sumomo whitelist add @user`',
+            text: '🍑 ユーザーを@メンションで指定してくださいなのです。\n使い方: `/sumomo whitelist add @user [github-username]`',
           });
           return;
         }
 
         const targetUserId = match[1] ?? '';
+        const githubUsername = parts[3] ?? '';
+        let updatedConfig = { ...config };
+        const results: string[] = [];
+
+        // Slackユーザーをホワイトリストに追加
         if (config.allowedSlackUsers.includes(targetUserId)) {
-          await respond({
-            response_type: 'ephemeral',
-            text: `🍑 <@${targetUserId}> は既にホワイトリストに含まれているのです。`,
-          });
-          return;
+          results.push(`<@${targetUserId}> は既にSlackホワイトリストに含まれています`);
+        } else {
+          updatedConfig = {
+            ...updatedConfig,
+            allowedSlackUsers: [...updatedConfig.allowedSlackUsers, targetUserId],
+          };
+          results.push(`<@${targetUserId}> をSlackホワイトリストに追加しました`);
         }
 
-        const newSlackUsers = [...config.allowedSlackUsers, targetUserId];
-        SaveAdminConfig({ ...config, allowedSlackUsers: newSlackUsers });
-        UpdateAllowedUsers(newSlackUsers);
+        // GitHubユーザー名が指定されている場合
+        if (githubUsername) {
+          if (!IsValidGitHubUsername(githubUsername)) {
+            await respond({
+              response_type: 'ephemeral',
+              text: '🍑 GitHubユーザー名が正しくないのです。\n英数字とハイフンのみ使用可能（1〜39文字）',
+            });
+            return;
+          }
+
+          const lowerUsername = githubUsername.toLowerCase();
+
+          // GitHubユーザーをホワイトリストに追加
+          if (updatedConfig.allowedGithubUsers.some((u) => u.toLowerCase() === lowerUsername)) {
+            results.push(`\`${githubUsername}\` は既にGitHubホワイトリストに含まれています`);
+          } else {
+            updatedConfig = {
+              ...updatedConfig,
+              allowedGithubUsers: [...updatedConfig.allowedGithubUsers, githubUsername],
+            };
+            results.push(`\`${githubUsername}\` をGitHubホワイトリストに追加しました`);
+          }
+
+          // ユーザーマッピングを追加
+          const existingMapping = updatedConfig.userMappings.find(
+            (m) => m.slack === targetUserId || m.github.toLowerCase() === lowerUsername
+          );
+          if (existingMapping) {
+            results.push(`マッピングは既に存在します（${existingMapping.github} ↔ <@${existingMapping.slack}>）`);
+          } else {
+            updatedConfig = {
+              ...updatedConfig,
+              userMappings: [...updatedConfig.userMappings, { github: githubUsername, slack: targetUserId }],
+            };
+            results.push(`マッピングを作成しました（\`${githubUsername}\` ↔ <@${targetUserId}>）`);
+          }
+
+          // GitHub ホワイトリストも通知
+          UpdateGitHubAllowedUsers(updatedConfig.allowedGithubUsers);
+        }
+
+        SaveAdminConfig(updatedConfig);
+        UpdateAllowedUsers(updatedConfig.allowedSlackUsers);
 
         await respond({
           response_type: 'ephemeral',
-          text: `🍑 <@${targetUserId}> をホワイトリストに追加したのでーす！`,
+          text: `🍑 完了したのでーす！\n${results.map((r) => `• ${r}`).join('\n')}`,
         });
         return;
       }
@@ -408,12 +462,20 @@ export function RegisterSlackHandlers(
         }
 
         const newSlackUsers = config.allowedSlackUsers.filter((u) => u !== targetUserId);
-        SaveAdminConfig({ ...config, allowedSlackUsers: newSlackUsers });
+        // 関連するマッピングも削除
+        const removedMapping = config.userMappings.find((m) => m.slack === targetUserId);
+        const newMappings = config.userMappings.filter((m) => m.slack !== targetUserId);
+        SaveAdminConfig({ ...config, allowedSlackUsers: newSlackUsers, userMappings: newMappings });
         UpdateAllowedUsers(newSlackUsers);
+
+        let responseText = `🍑 <@${targetUserId}> をホワイトリストから削除したのでーす！`;
+        if (removedMapping) {
+          responseText += `\nマッピング（\`${removedMapping.github}\` ↔ <@${targetUserId}>）も削除しました。`;
+        }
 
         await respond({
           response_type: 'ephemeral',
-          text: `🍑 <@${targetUserId}> をホワイトリストから削除したのでーす！`,
+          text: responseText,
         });
         return;
       }
@@ -444,12 +506,24 @@ export function RegisterSlackHandlers(
         const newGithubUsers = config.allowedGithubUsers.filter(
           (u) => u.toLowerCase() !== lowerUsername
         );
-        SaveAdminConfig({ ...config, allowedGithubUsers: newGithubUsers });
+        // 関連するマッピングも削除
+        const removedMapping = config.userMappings.find(
+          (m) => m.github.toLowerCase() === lowerUsername
+        );
+        const newMappings = config.userMappings.filter(
+          (m) => m.github.toLowerCase() !== lowerUsername
+        );
+        SaveAdminConfig({ ...config, allowedGithubUsers: newGithubUsers, userMappings: newMappings });
         UpdateGitHubAllowedUsers(newGithubUsers);
+
+        let responseText = `🍑 GitHubユーザー \`${existingUser}\` をホワイトリストから削除したのでーす！`;
+        if (removedMapping) {
+          responseText += `\nマッピング（\`${existingUser}\` ↔ <@${removedMapping.slack}>）も削除しました。`;
+        }
 
         await respond({
           response_type: 'ephemeral',
-          text: `🍑 GitHubユーザー \`${existingUser}\` をホワイトリストから削除したのでーす！`,
+          text: responseText,
         });
         return;
       }

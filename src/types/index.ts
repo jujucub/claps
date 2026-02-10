@@ -108,13 +108,12 @@ export interface UserMapping {
   slack: string;
 }
 
-// 管理UI用設定
+// 管理設定（Slackコマンドで管理、~/.sumomo/admin-config.json に永続化）
 export interface AdminConfig {
   allowedGithubUsers: string[];
   allowedSlackUsers: string[];
   githubRepos: string[];
   userMappings: UserMapping[];
-  adminSlackUser: string;
 }
 
 // 設定
@@ -126,7 +125,6 @@ export interface Config {
   readonly githubToken: string;
   readonly githubRepos: readonly string[];
   readonly approvalServerPort: number;
-  readonly adminServerPort: number;
   readonly githubPollInterval: number;
   readonly allowedUsers: AllowedUsers;
 }

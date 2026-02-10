@@ -45,11 +45,6 @@ import {
 } from './git/worktree.js';
 import { GetOrCloneRepo, GetWorkspacePath } from './git/repo.js';
 import {
-  InitAdminServer,
-  StartAdminServer,
-  StopAdminServer,
-} from './admin/server.js';
-import {
   GetSlackUserForGitHub,
   GetAdminSlackUser,
 } from './admin/store.js';
@@ -98,10 +93,6 @@ async function Start(): Promise<void> {
   InitGitHubPoller(_config);
   StartGitHubPoller(_config, HandleGitHubIssue, HandleIssueClosed);
 
-  // 管理サーバーを初期化・起動
-  InitAdminServer();
-  await StartAdminServer(_config.adminServerPort);
-
   // タスクキューのイベントを監視
   _taskQueue.On('added', OnTaskAdded);
 
@@ -119,7 +110,6 @@ async function Stop(): Promise<void> {
 
   // 各コンポーネントを停止
   StopGitHubPoller();
-  await StopAdminServer();
   await StopApprovalServer();
   await StopSlackBot();
 

@@ -17,11 +17,11 @@ GitHub Issue / Slack 連携 Claude 自動対応システム
 |------|------|
 | **worktree分離** | Issue毎に独立したworktreeで作業、メインブランチに影響なし |
 | **自動PR作成** | 作業完了後に自動でコミット・プッシュ・PR作成 |
-| **tmux制御** | Claude CLIを対話モードで実行、権限制御も可能 |
+| **ヘッドレス実行** | Claude CLIをヘッドレスモード(`-p`)で実行、Hook による権限制御 |
 | **Slackスレッド** | Issue処理の進捗をスレッドでリアルタイム通知 |
 | **モーダル承認** | 許可/拒否時にコメント入力可能 |
 | **セッション継続** | 同じスレッド/Issueでの会話を継続可能 |
-| **管理UI** | ホワイトリストやリポジトリをWebで管理 |
+| **Slackコマンド管理** | `/sumomo` コマンドでホワイトリスト・リポジトリ・ユーザーマッピングを管理 |
 
 ## 名前の由来
 
@@ -51,7 +51,6 @@ npm start
 |--------|-----------|------|
 | Node.js | >= 20.0.0 | ランタイム |
 | Claude CLI | 最新 | AI実行エンジン |
-| tmux | 最新 | セッション管理 |
 | Git | >= 2.20 | worktree機能 |
 | GitHub CLI (gh) | 最新 | PR作成 |
 
@@ -74,10 +73,10 @@ npm start
 |------|-----------|------|
 | `ANTHROPIC_API_KEY` | - | Anthropic API Key（Max Plan使用時は不要） |
 | `APPROVAL_SERVER_PORT` | `3001` | 承認サーバーポート |
-| `ADMIN_SERVER_PORT` | `3002` | 管理画面サーバーポート |
 | `GITHUB_POLL_INTERVAL` | `300000` | GitHub監視間隔（ミリ秒） |
-| `ALLOWED_GITHUB_USERS` | - | 許可するGitHubユーザー（カンマ区切り） |
-| `ALLOWED_SLACK_USERS` | - | 許可するSlackユーザーID（カンマ区切り） |
+| `ADMIN_SLACK_USER` | - | 管理者のSlackユーザーID |
+| `ALLOWED_GITHUB_USERS` | - | 許可するGitHubユーザー（カンマ区切り、初期値） |
+| `ALLOWED_SLACK_USERS` | - | 許可するSlackユーザーID（カンマ区切り、初期値） |
 
 ## 使い方
 
@@ -102,17 +101,26 @@ npm start
 @sumomo このファイルのテストを書いて
 ```
 
-### 管理UI
+### Slack コマンドで管理
 
 ```
-http://localhost:3002/
+/sumomo help                              → ヘルプ表示
+/sumomo repos                             → 監視リポジトリ一覧
+/sumomo owner/repo メッセージ              → 指定リポジトリでClaude実行
 ```
 
-管理UIで設定可能:
-- 許可GitHubユーザー
-- 許可Slackユーザー
-- 監視対象リポジトリ
-- GitHubユーザー ↔ Slackユーザーのマッピング
+**管理者コマンド（`ADMIN_SLACK_USER` で指定されたユーザーのみ）:**
+
+```
+/sumomo add-repo owner/repo               → 監視リポジトリ追加
+/sumomo remove-repo owner/repo            → 監視リポジトリ削除
+/sumomo whitelist                         → ホワイトリスト表示（マッピング含む）
+/sumomo whitelist add @user               → Slackユーザーをホワイトリストに追加
+/sumomo whitelist add @user github-name   → Slack + GitHub + マッピングを同時登録
+/sumomo whitelist add-github username     → GitHubユーザーのみ追加
+/sumomo whitelist remove @user            → Slackユーザー削除（関連マッピングも削除）
+/sumomo whitelist remove-github username  → GitHubユーザー削除（関連マッピングも削除）
+```
 
 ## 利用可能なスクリプト
 

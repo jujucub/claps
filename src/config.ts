@@ -64,10 +64,6 @@ export function LoadConfig(): Config {
     process.env['APPROVAL_SERVER_PORT'] ?? '3001',
     10
   );
-  const adminServerPort = parseInt(
-    process.env['ADMIN_SERVER_PORT'] ?? '3002',
-    10
-  );
   const githubPollInterval = parseInt(
     process.env['GITHUB_POLL_INTERVAL'] ?? '300000',
     10
@@ -118,7 +114,6 @@ export function LoadConfig(): Config {
     githubToken,
     githubRepos,
     approvalServerPort,
-    adminServerPort,
     githubPollInterval,
     allowedUsers,
   };
