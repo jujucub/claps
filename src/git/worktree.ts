@@ -462,8 +462,10 @@ export async function InitializeWorkspace(workspacePath: string): Promise<void> 
 }
 
 /**
- * Claude CLI にプロジェクトを認識させるためのダミーセッションを実行する
- * 初回のみ実行し、マーカーファイルで完了を記録する
+ * Claude CLI のプロジェクト信頼を確立するため、tmux でインタラクティブに起動する
+ * --dangerously-skip-permissions の初回起動では hook が発火しないバグがあるため、
+ * 事前にターミナルモードで起動し信頼ダイアログで "Yes" を選択する必要がある
+ * (ref: https://github.com/anthropics/claude-code/issues/10385)
  */
 async function WarmUpClaudeProject(workspacePath: string): Promise<void> {
   const markerPath = path.join(workspacePath, '.claude', '.warmup-done');
@@ -471,23 +473,96 @@ async function WarmUpClaudeProject(workspacePath: string): Promise<void> {
     return;
   }
 
-  console.log('Warming up Claude CLI project for workspace...');
+  // tmux が必要
   try {
-    // 通常モード（--dangerously-skip-permissions なし）でダミーセッションを実行
-    // "ok" に対してClaudeはツールを使わずテキストで応答するだけなので高速
-    execSync('claude -p "ok" --output-format json', {
-      cwd: workspacePath,
-      env: {
-        ...process.env,
-        CLAUDE_PROJECT_DIR: workspacePath,
-      },
-      stdio: 'pipe',
-      timeout: 60000,
-    });
-
-    fs.writeFileSync(markerPath, new Date().toISOString());
-    console.log('Claude CLI project warmup completed');
-  } catch (error) {
-    console.warn('Claude CLI project warmup failed (hooks may not work on first run):', error);
+    execSync('which tmux', { stdio: 'pipe' });
+  } catch {
+    console.warn('tmux not found. Skipping Claude CLI warmup. Hooks may not work on first run.');
+    return;
   }
+
+  console.log('Warming up Claude CLI project via tmux (interactive trust)...');
+  const sessionName = 'sumomo-warmup';
+
+  // 既存セッションをクリーンアップ
+  try {
+    execSync(`tmux kill-session -t ${sessionName}`, { stdio: 'pipe' });
+  } catch {
+    // 存在しない場合は無視
+  }
+
+  try {
+    // Claude CLI をインタラクティブモードで tmux 内に起動
+    execSync(
+      `tmux new-session -d -s ${sessionName} -c "${workspacePath}" 'claude'`,
+      { stdio: 'pipe' }
+    );
+
+    // 信頼ダイアログの表示を待ち、承認する
+    let accepted = false;
+    const maxAttempts = 60; // 500ms × 60 = 30秒
+
+    for (let i = 0; i < maxAttempts; i++) {
+      await Sleep(500);
+
+      let paneContent: string;
+      try {
+        paneContent = execSync(
+          `tmux capture-pane -t ${sessionName} -p`,
+          { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
+        );
+      } catch {
+        // セッションが終了した場合
+        break;
+      }
+
+      // 信頼ダイアログを検出 → Enter で "Yes" を選択
+      if (paneContent.includes('Yes') || paneContent.includes('trust')) {
+        execSync(`tmux send-keys -t ${sessionName} Enter`, { stdio: 'pipe' });
+        accepted = true;
+        await Sleep(3000);
+        break;
+      }
+
+      // Claude のプロンプトが表示されている → 既に信頼済み
+      if (paneContent.includes('>')) {
+        accepted = true;
+        break;
+      }
+    }
+
+    // Claude CLI を終了
+    try {
+      execSync(`tmux send-keys -t ${sessionName} '/exit' Enter`, { stdio: 'pipe' });
+      await Sleep(2000);
+    } catch {
+      // 無視
+    }
+
+    // tmux セッションをクリーンアップ
+    try {
+      execSync(`tmux kill-session -t ${sessionName}`, { stdio: 'pipe' });
+    } catch {
+      // 既に終了している場合は無視
+    }
+
+    if (accepted) {
+      fs.writeFileSync(markerPath, new Date().toISOString());
+      console.log('Claude CLI project warmup completed (trust accepted)');
+    } else {
+      console.warn('Claude CLI warmup: trust dialog not detected within timeout');
+    }
+  } catch (error) {
+    console.warn('Claude CLI project warmup failed:', error);
+    // クリーンアップ
+    try {
+      execSync(`tmux kill-session -t ${sessionName}`, { stdio: 'pipe' });
+    } catch {
+      // 無視
+    }
+  }
+}
+
+function Sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
