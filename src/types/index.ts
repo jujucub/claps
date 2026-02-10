@@ -127,6 +127,7 @@ export interface Config {
   readonly approvalServerPort: number;
   readonly githubPollInterval: number;
   readonly allowedUsers: AllowedUsers;
+  readonly reflectionConfig: ReflectionConfig;
 }
 
 // Slack メッセージブロック
@@ -161,6 +162,57 @@ export interface SlackBlockElement {
   readonly action_id?: string;
   readonly value?: string;
   readonly style?: string;
+}
+
+// 作業履歴レコード
+export interface WorkHistoryRecord {
+  readonly id: string;
+  readonly timestamp: string;
+  readonly source: TaskSource;
+  readonly userId: string;
+  readonly prompt: string;
+  readonly result: 'success' | 'failure';
+  readonly duration: number;
+  readonly repo?: string;
+  readonly issueNumber?: number;
+  readonly prUrl?: string;
+  readonly summary: string;
+}
+
+// 内省結果
+export interface ReflectionResult {
+  readonly date: string;
+  readonly generatedAt: string;
+  readonly userReflections: readonly UserReflection[];
+}
+
+export interface UserReflection {
+  readonly userId: string;
+  readonly summary: string;
+  readonly suggestions: readonly TaskSuggestion[];
+  readonly patterns: readonly string[];
+}
+
+// タスク提案
+export interface TaskSuggestion {
+  readonly id: string;
+  readonly title: string;
+  readonly description: string;
+  readonly priority: 'high' | 'medium' | 'low';
+  readonly estimatedEffort: string;
+  readonly relatedRepo?: string;
+  status: 'pending' | 'approved' | 'rejected' | 'executing' | 'completed';
+  approvedBy?: string;
+  approvedAt?: string;
+}
+
+// 内省設定
+export interface ReflectionConfig {
+  readonly enabled: boolean;
+  readonly schedule: string;
+  readonly timezone: string;
+  readonly historyDays: number;
+  readonly maxRecordsPerUser: number;
 }
 
 // Hook の入出力

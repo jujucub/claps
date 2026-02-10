@@ -6,7 +6,7 @@ import * as dotenv from 'dotenv';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import type { Config, AllowedUsers } from './types/index.js';
+import type { Config, AllowedUsers, ReflectionConfig } from './types/index.js';
 import { LoadAdminConfig, HasAdminConfig } from './admin/store.js';
 
 // ~/.sumomo/.env を優先的に読み込む（存在する場合）
@@ -106,6 +106,15 @@ export function LoadConfig(): Config {
     console.warn('⚠️ ALLOWED_SLACK_USERS is empty - all Slack requests will be denied');
   }
 
+  // 内省機能の設定
+  const reflectionConfig: ReflectionConfig = {
+    enabled: process.env['REFLECTION_ENABLED'] === 'true',
+    schedule: process.env['REFLECTION_SCHEDULE'] ?? '09:00',
+    timezone: process.env['REFLECTION_TIMEZONE'] ?? 'Asia/Tokyo',
+    historyDays: parseInt(process.env['REFLECTION_HISTORY_DAYS'] ?? '7', 10),
+    maxRecordsPerUser: parseInt(process.env['REFLECTION_MAX_RECORDS'] ?? '50', 10),
+  };
+
   return {
     anthropicApiKey,
     slackBotToken,
@@ -116,5 +125,6 @@ export function LoadConfig(): Config {
     approvalServerPort,
     githubPollInterval,
     allowedUsers,
+    reflectionConfig,
   };
 }

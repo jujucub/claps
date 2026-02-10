@@ -49,6 +49,17 @@ import {
   GetAdminSlackUser,
 } from './admin/store.js';
 import { SetupGlobalMcpConfig } from './mcp/setup.js';
+import { RecordTaskCompletion } from './history/recorder.js';
+import {
+  InitReflectionScheduler,
+  StartReflectionScheduler,
+  StopReflectionScheduler,
+} from './reflection/scheduler.js';
+import { SetProcessingRef } from './reflection/engine.js';
+import {
+  PostReflectionResult,
+  SetSuggestionApprovedCallback,
+} from './slack/handlers.js';
 
 // 作業ログの投稿間隔（ミリ秒）
 const WORK_LOG_INTERVAL_MS = 10000;
@@ -96,6 +107,14 @@ async function Start(): Promise<void> {
   // タスクキューのイベントを監視
   _taskQueue.On('added', OnTaskAdded);
 
+  // 内省スケジューラを初期化・起動
+  SetProcessingRef(() => _isProcessing);
+  SetSuggestionApprovedCallback(HandleSlackMention);
+  InitReflectionScheduler(_config, async (result) => {
+    await PostReflectionResult(slackApp, _config!.slackChannelId, result);
+  });
+  StartReflectionScheduler();
+
   _isRunning = true;
   console.log('🍑 すももの起動完了であります！');
 }
@@ -109,6 +128,7 @@ async function Stop(): Promise<void> {
   _isRunning = false;
 
   // 各コンポーネントを停止
+  StopReflectionScheduler();
   StopGitHubPoller();
   await StopApprovalServer();
   await StopSlackBot();
@@ -299,6 +319,9 @@ async function ProcessNextTask(): Promise<void> {
 
     // 結果を通知
     await NotifyResult(task, result);
+
+    // 作業履歴を記録
+    RecordTaskCompletion(task, result);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     console.error(`Task failed: ${task.id}`, error);

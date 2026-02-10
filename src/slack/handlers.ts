@@ -8,6 +8,8 @@ import type {
   ApprovalResult,
   SlackTaskMetadata,
   AllowedUsers,
+  ReflectionResult,
+  TaskSuggestion,
 } from '../types/index.js';
 import {
   GetAdminSlackUser,
@@ -16,6 +18,12 @@ import {
 } from '../admin/store.js';
 import { UpdateRepos } from '../github/poller.js';
 import { UpdateAllowedUsers as UpdateGitHubAllowedUsers } from '../github/poller.js';
+import { GetReflectionStore } from '../reflection/store.js';
+import {
+  RunReflectionManually,
+  UpdateReflectionConfig,
+  GetReflectionConfig,
+} from '../reflection/scheduler.js';
 
 // ホワイトリスト（RegisterSlackHandlersで設定、UpdateAllowedUsersで更新可能）
 let _allowedUsers: AllowedUsers | undefined;
@@ -95,6 +103,141 @@ function IsValidGitHubUsername(username: string): boolean {
   return /^[a-zA-Z0-9](?:[a-zA-Z0-9]|-(?=[a-zA-Z0-9])){0,38}$/.test(username);
 }
 
+// 提案承認時のタスク実行コールバック
+let _onSuggestionApproved:
+  | ((metadata: SlackTaskMetadata, prompt: string) => Promise<void>)
+  | undefined;
+
+/**
+ * 提案承認コールバックを設定する
+ */
+export function SetSuggestionApprovedCallback(
+  callback: (metadata: SlackTaskMetadata, prompt: string) => Promise<void>
+): void {
+  _onSuggestionApproved = callback;
+}
+
+/**
+ * 内省結果をSlackに投稿する
+ */
+export async function PostReflectionResult(
+  app: App,
+  channelId: string,
+  result: ReflectionResult
+): Promise<void> {
+  // ユーザーごとの提案数を集計
+  const userSummaries = result.userReflections.map((r) => {
+    return `<@${r.userId}> さんへの提案が ${r.suggestions.length} 件ありますー！`;
+  });
+
+  // 親メッセージを投稿
+  const parentResult = await app.client.chat.postMessage({
+    channel: channelId,
+    text: `:peach: おはようなのでーす！日次内省レポート (${result.date})`,
+    blocks: [
+      {
+        type: 'header',
+        text: {
+          type: 'plain_text',
+          text: ':peach: 日次内省レポートであります！',
+          emoji: true,
+        },
+      },
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `*${result.date}* の内省結果なのでーす！\n\n${userSummaries.join('\n')}`,
+        },
+      },
+    ],
+  });
+
+  const parentTs = parentResult.ts;
+  if (!parentTs) return;
+
+  // ユーザーごとにスレッドで提案を投稿
+  for (const reflection of result.userReflections) {
+    // ユーザーサマリーを投稿
+    await app.client.chat.postMessage({
+      channel: channelId,
+      thread_ts: parentTs,
+      text: `<@${reflection.userId}> さんの分析結果`,
+      blocks: [
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: `*<@${reflection.userId}> さんの分析*\n\n${reflection.summary}`,
+          },
+        },
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: `*発見したパターン:*\n${reflection.patterns.map((p) => `• ${p}`).join('\n')}`,
+          },
+        },
+      ],
+    });
+
+    // 各提案をボタン付きで投稿
+    for (let i = 0; i < reflection.suggestions.length; i++) {
+      const suggestion = reflection.suggestions[i] as TaskSuggestion;
+      const priorityEmoji: Record<string, string> = {
+        high: ':red_circle:',
+        medium: ':large_orange_circle:',
+        low: ':white_circle:',
+      };
+      const emoji = priorityEmoji[suggestion.priority] ?? ':white_circle:';
+
+      const repoInfo = suggestion.relatedRepo ? `\n関連: \`${suggestion.relatedRepo}\`` : '';
+
+      await app.client.chat.postMessage({
+        channel: channelId,
+        thread_ts: parentTs,
+        text: `提案 ${i + 1}: ${suggestion.title}`,
+        blocks: [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: `:bulb: *提案 ${i + 1}: ${suggestion.title}*\n優先度: ${emoji} ${suggestion.priority}\n説明: ${suggestion.description}${repoInfo}\n予想工数: ${suggestion.estimatedEffort}`,
+            },
+          },
+          {
+            type: 'actions',
+            elements: [
+              {
+                type: 'button',
+                text: {
+                  type: 'plain_text',
+                  text: '実行する',
+                  emoji: true,
+                },
+                style: 'primary',
+                action_id: `suggestion_approve_${suggestion.id}`,
+                value: suggestion.id,
+              },
+              {
+                type: 'button',
+                text: {
+                  type: 'plain_text',
+                  text: '却下する',
+                  emoji: true,
+                },
+                style: 'danger',
+                action_id: `suggestion_reject_${suggestion.id}`,
+                value: suggestion.id,
+              },
+            ],
+          },
+        ],
+      });
+    }
+  }
+}
+
 /**
  * Slack ハンドラーを登録する
  */
@@ -142,6 +285,12 @@ export function RegisterSlackHandlers(
 *例:*
 \`/sumomo h-sato/my-project バグを修正して\``;
 
+      helpText += `
+
+*内省コマンド:*
+\`/sumomo reflection\`
+→ 内省機能のステータス表示`;
+
       if (isAdmin) {
         helpText += `
 
@@ -151,6 +300,18 @@ export function RegisterSlackHandlers(
 
 \`/sumomo remove-repo owner/repo\`
 → 監視リポジトリを削除
+
+\`/sumomo reflection run\`
+→ 内省を手動実行
+
+\`/sumomo reflection enable\`
+→ 内省機能を有効化
+
+\`/sumomo reflection disable\`
+→ 内省機能を無効化
+
+\`/sumomo reflection schedule HH:MM\`
+→ 内省の実行時刻を変更
 
 \`/sumomo whitelist\`
 → ホワイトリストを表示（マッピング情報含む）
@@ -171,6 +332,103 @@ export function RegisterSlackHandlers(
       await respond({
         response_type: 'ephemeral',
         text: helpText,
+      });
+      return;
+    }
+
+    // reflection サブコマンド
+    if (subCommand === 'reflection') {
+      const reflectionAction = parts[1]?.toLowerCase() ?? '';
+      const reflectionConfig = GetReflectionConfig();
+
+      // ステータス表示（全ユーザー可）
+      if (!reflectionAction) {
+        const status = reflectionConfig?.enabled ? '有効' : '無効';
+        const schedule = reflectionConfig?.schedule ?? '09:00';
+        const timezone = reflectionConfig?.timezone ?? 'Asia/Tokyo';
+        const historyDays = reflectionConfig?.historyDays ?? 7;
+
+        const reflectionStore = GetReflectionStore();
+        const latest = reflectionStore.GetLatest();
+        const lastRun = latest ? latest.generatedAt : 'まだ実行されていません';
+
+        await respond({
+          response_type: 'ephemeral',
+          text: `🍑 *内省機能ステータス*\n\n• 状態: ${status}\n• 実行時刻: ${schedule} (${timezone})\n• 履歴日数: ${historyDays}日\n• 最終実行: ${lastRun}`,
+        });
+        return;
+      }
+
+      // 以下は管理者のみ
+      if (!IsAdmin(userId)) {
+        await respond({
+          response_type: 'ephemeral',
+          text: '🍑 このコマンドは管理者のみ使用できるのです。',
+        });
+        return;
+      }
+
+      // reflection run - 手動実行
+      if (reflectionAction === 'run') {
+        await respond({
+          response_type: 'ephemeral',
+          text: '🍑 内省を手動実行するのでーす！しばらくお待ちください。',
+        });
+
+        void RunReflectionManually().then((result) => {
+          if (!result) {
+            void app.client.chat.postEphemeral({
+              channel: command.channel_id,
+              user: userId,
+              text: '🍑 内省の実行結果がなかったのです。アクティブユーザーがいないか、エラーが発生した可能性があります。',
+            });
+          }
+        });
+        return;
+      }
+
+      // reflection enable
+      if (reflectionAction === 'enable') {
+        UpdateReflectionConfig({ enabled: true });
+        await respond({
+          response_type: 'ephemeral',
+          text: '🍑 内省機能を有効化したのでーす！',
+        });
+        return;
+      }
+
+      // reflection disable
+      if (reflectionAction === 'disable') {
+        UpdateReflectionConfig({ enabled: false });
+        await respond({
+          response_type: 'ephemeral',
+          text: '🍑 内省機能を無効化したのでーす！',
+        });
+        return;
+      }
+
+      // reflection schedule HH:MM
+      if (reflectionAction === 'schedule') {
+        const time = parts[2] ?? '';
+        if (!/^\d{2}:\d{2}$/.test(time)) {
+          await respond({
+            response_type: 'ephemeral',
+            text: '🍑 時刻の形式が正しくないのです。\n使い方: `/sumomo reflection schedule HH:MM`',
+          });
+          return;
+        }
+
+        UpdateReflectionConfig({ schedule: time });
+        await respond({
+          response_type: 'ephemeral',
+          text: `🍑 内省の実行時刻を ${time} に変更したのでーす！`,
+        });
+        return;
+      }
+
+      await respond({
+        response_type: 'ephemeral',
+        text: '🍑 不明なサブコマンドなのです。\n使い方: `/sumomo reflection [run|enable|disable|schedule HH:MM]`',
       });
       return;
     }
@@ -917,6 +1175,147 @@ export function RegisterSlackHandlers(
           },
         ],
       });
+    }
+  });
+
+  // 提案承認ボタン（モーダルで追加コメント入力）
+  app.action(/^suggestion_approve_/, async ({ ack, body, client }) => {
+    await ack();
+
+    if (body.type !== 'block_actions') return;
+
+    const action = body.actions[0];
+    if (!action || action.type !== 'button') return;
+
+    const suggestionId = action.value ?? '';
+    if (!suggestionId) return;
+
+    // モーダルを開く
+    await client.views.open({
+      trigger_id: body.trigger_id,
+      view: {
+        type: 'modal',
+        callback_id: `suggestion_modal_approve_${suggestionId}`,
+        title: {
+          type: 'plain_text',
+          text: '提案を実行',
+        },
+        submit: {
+          type: 'plain_text',
+          text: '実行する',
+        },
+        close: {
+          type: 'plain_text',
+          text: 'キャンセル',
+        },
+        blocks: [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: 'この提案をタスクとして実行するのでーす！追加の指示があれば入力してください。',
+            },
+          },
+          {
+            type: 'input',
+            block_id: 'suggestion_comment_block',
+            optional: true,
+            element: {
+              type: 'plain_text_input',
+              action_id: 'suggestion_comment_input',
+              multiline: true,
+              placeholder: {
+                type: 'plain_text',
+                text: '追加の指示があれば入力してください（任意）',
+              },
+            },
+            label: {
+              type: 'plain_text',
+              text: '追加コメント',
+            },
+          },
+        ],
+      },
+    });
+  });
+
+  // 提案却下ボタン
+  app.action(/^suggestion_reject_/, async ({ ack, body, client }) => {
+    await ack();
+
+    if (body.type !== 'block_actions') return;
+
+    const action = body.actions[0];
+    if (!action || action.type !== 'button') return;
+
+    const suggestionId = action.value ?? '';
+    if (!suggestionId) return;
+
+    const reflectionStore = GetReflectionStore();
+    reflectionStore.UpdateSuggestionStatus(suggestionId, 'rejected', body.user.id);
+
+    // メッセージを更新
+    await client.chat.update({
+      channel: body.channel?.id ?? channelId,
+      ts: body.message?.ts ?? '',
+      text: '提案が却下されました',
+      blocks: [
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: `❌ *却下されました* by <@${body.user.id}>`,
+          },
+        },
+      ],
+    });
+  });
+
+  // 提案承認モーダルの送信処理
+  app.view(/^suggestion_modal_approve_/, async ({ ack, view, body, client }) => {
+    await ack();
+
+    const callbackId = view.callback_id;
+    const suggestionId = callbackId.replace('suggestion_modal_approve_', '');
+
+    const reflectionStore = GetReflectionStore();
+    const found = reflectionStore.GetSuggestion(suggestionId);
+    if (!found) return;
+
+    const { suggestion } = found;
+
+    // コメントを取得
+    const commentBlock = view.state.values['suggestion_comment_block'];
+    const comment = commentBlock?.['suggestion_comment_input']?.value ?? '';
+
+    // ステータスを更新
+    reflectionStore.UpdateSuggestionStatus(suggestionId, 'approved', body.user.id);
+
+    // タスクとして実行
+    if (_onSuggestionApproved) {
+      const prompt = `${suggestion.title}\n\n${suggestion.description}${comment ? `\n\n追加指示: ${comment}` : ''}`;
+
+      // 開始メッセージを投稿
+      const startResult = await client.chat.postMessage({
+        channel: channelId,
+        text: `🍑 提案「${suggestion.title}」をタスクとして実行するのでーす！`,
+      });
+
+      const threadTs = startResult.ts ?? '';
+
+      const metadata: SlackTaskMetadata = {
+        source: 'slack',
+        channelId,
+        threadTs,
+        userId: body.user.id,
+        messageText: prompt,
+        targetRepo: suggestion.relatedRepo,
+      };
+
+      await _onSuggestionApproved(metadata, prompt);
+
+      // ステータスを実行中に更新
+      reflectionStore.UpdateSuggestionStatus(suggestionId, 'executing');
     }
   });
 }
