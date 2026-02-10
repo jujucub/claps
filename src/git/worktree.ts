@@ -119,8 +119,9 @@ export async function CreateWorktree(
     }
   );
 
-  // sumomoのPreToolUseフック設定を注入
+  // sumomoのPreToolUseフック設定を注入 + プロジェクト信頼を確立
   await InjectClaudeSettings(worktreeDir);
+  await WarmUpClaudeProject(worktreeDir);
 
   const info: WorktreeInfo = {
     branchName,
@@ -293,6 +294,7 @@ export async function GetOrCreateWorktree(
     console.log(`Reusing existing worktree: ${existing.worktreePath}`);
     // 既存worktreeでも毎回hook設定を再注入（git merge等で上書きされる可能性があるため）
     await InjectClaudeSettings(existing.worktreePath);
+    await WarmUpClaudeProject(existing.worktreePath);
     return { worktreeInfo: existing, isExisting: true };
   }
 
