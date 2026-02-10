@@ -83,8 +83,10 @@ let _currentTaskId: string | undefined;
 let _currentThreadTs: string | undefined;
 let _currentRequestedBySlackId: string | undefined;
 
-// 現在のタスクで許可されたツール（同じタスク内では自動許可）
-const _allowedToolsForTask = new Set<string>();
+// 現在のタスクで許可されたツール+内容キー（同一内容のみ自動許可）
+// Bash: "Bash:<command>", Write: "Write:<filePath>", Edit: "Edit:<filePath>"
+// Task等: "Task" （ツール名のみ）
+const _allowedKeysForTask = new Set<string>();
 const _autoApproveCounter = new Map<string, number>();
 
 // 作業ログの投稿間隔（ミリ秒）
@@ -259,11 +261,12 @@ async function HandleApprovalRequest(hookInput: HookInput): Promise<HookOutput> 
     return { permissionDecision: 'allow' };
   }
 
-  // 同じタスク内で既に許可されたツールは自動許可
-  if (_allowedToolsForTask.has(tool_name)) {
+  // 同じタスク内で同じ内容が既に許可されていれば自動許可
+  const approvalKey = GetApprovalKey(tool_name, tool_input);
+  if (_allowedKeysForTask.has(approvalKey)) {
     // 自動許可のログは最初の5回だけ表示（ログ汚染防止）
-    const autoApproveCount = (_autoApproveCounter.get(tool_name) ?? 0) + 1;
-    _autoApproveCounter.set(tool_name, autoApproveCount);
+    const autoApproveCount = (_autoApproveCounter.get(approvalKey) ?? 0) + 1;
+    _autoApproveCounter.set(approvalKey, autoApproveCount);
     if (autoApproveCount <= 5) {
       console.log(`Auto-approved ${tool_name} (${autoApproveCount})`);
     } else if (autoApproveCount === 6) {
@@ -271,7 +274,7 @@ async function HandleApprovalRequest(hookInput: HookInput): Promise<HookOutput> 
     }
     return {
       permissionDecision: 'allow',
-      message: 'Auto-approved (already allowed in this task)',
+      message: 'Auto-approved (same content already allowed in this task)',
     };
   }
 
@@ -307,9 +310,9 @@ async function HandleApprovalRequest(hookInput: HookInput): Promise<HookOutput> 
       message += `: ${result.comment}`;
     }
 
-    // 許可された場合、このタスク内では同じツールを自動許可
+    // 許可された場合、このタスク内では同じ内容を自動許可
     if (result.decision === 'allow') {
-      _allowedToolsForTask.add(tool_name);
+      _allowedKeysForTask.add(approvalKey);
     }
 
     return {
@@ -410,7 +413,7 @@ function GetToolDetails(toolName: string, toolInput: Record<string, unknown>): s
 /**
  * 承認が必要なツール
  * これらのツールはファイル変更やコマンド実行など副作用を伴うため、
- * 初回使用時にSlack承認を求める（同一タスク内では自動承認）
+ * 初回使用時にSlack承認を求める（内容が変わる場合は再承認）
  */
 const TOOLS_REQUIRING_APPROVAL = new Set([
   'Bash',
@@ -419,6 +422,33 @@ const TOOLS_REQUIRING_APPROVAL = new Set([
   'Task',
   'NotebookEdit',
 ]);
+
+/**
+ * 自動承認のキーを生成する
+ * Claude Code の標準動作に合わせ、ツール内容が変わる場合は再承認を要求する
+ * - Bash: コマンド文字列で識別
+ * - Write/Edit: ファイルパスで識別
+ * - Task/NotebookEdit: ツール名のみ
+ */
+function GetApprovalKey(
+  toolName: string,
+  toolInput: Record<string, unknown>
+): string {
+  if (toolName === 'Bash') {
+    const command = String(toolInput['command'] ?? '');
+    return `Bash:${command}`;
+  }
+  if (toolName === 'Write') {
+    const filePath = String(toolInput['file_path'] ?? '');
+    return `Write:${filePath}`;
+  }
+  if (toolName === 'Edit') {
+    const filePath = String(toolInput['file_path'] ?? '');
+    return `Edit:${filePath}`;
+  }
+  // Task, NotebookEdit 等はツール名のみ
+  return toolName;
+}
 
 /**
  * 承認が必要かどうかを判定する
@@ -470,7 +500,7 @@ export function SetCurrentTaskId(
   _currentThreadTs = threadTs;
   _currentRequestedBySlackId = requestedBySlackId;
   // 新しいタスクでは許可済みツールをリセット
-  _allowedToolsForTask.clear();
+  _allowedKeysForTask.clear();
 }
 
 /**
@@ -480,7 +510,7 @@ export function ClearCurrentTaskId(): void {
   _currentTaskId = undefined;
   _currentThreadTs = undefined;
   _currentRequestedBySlackId = undefined;
-  _allowedToolsForTask.clear();
+  _allowedKeysForTask.clear();
   _autoApproveCounter.clear();
   _lastWorkLogTime = 0;
 }
