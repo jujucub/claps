@@ -1,138 +1,167 @@
-# CLAPS 👏
+# CLAPS
 
-Claude Approval Persona Service - Slack承認付きClaude自動化サービス
+**C**laude **L**ink for **A**pproval-based **P**ersona **S**ervice
 
-## これは何？
+A Slack-integrated Claude automation service with approval-based permission control and customizable character personas.
 
-`[claps]` タグを付けるだけで、Claude が自動でコード修正・PR作成を行うBotです。
+> [Japanese README (日本語)](./README.ja.md)
 
-- **GitHub Issue** に `[claps]` タグ → Issue を分析してコード修正、PR作成
-- **Slack** で `@claps` → 指示に従ってタスク実行
-- **危険な操作** → Slack モーダルで承認を求める（コメント入力可）
-- **判断が必要な時** → Slack で質問してくる
+## What is CLAPS?
 
-## 主な機能
+CLAPS is a bot that automatically analyzes code, applies fixes, and creates PRs when triggered by a simple tag or mention.
 
-| 機能 | 説明 |
-|------|------|
-| **worktree分離** | Issue毎に独立したworktreeで作業、メインブランチに影響なし |
-| **自動PR作成** | 作業完了後に自動でコミット・プッシュ・PR作成 |
-| **ヘッドレス実行** | Claude CLIをヘッドレスモード(`-p`)で実行、Hook による権限制御 |
-| **Slackスレッド** | Issue処理の進捗をスレッドでリアルタイム通知 |
-| **モーダル承認** | 許可/拒否時にコメント入力可能 |
-| **セッション継続** | 同じスレッド/Issueでの会話を継続可能 |
-| **Slackコマンド管理** | `/claps` コマンドでホワイトリスト・リポジトリ・ユーザーマッピングを管理 |
+- **GitHub Issue** with `[claps]` tag &rarr; Analyzes the issue, modifies code, and creates a PR
+- **Slack** mention `@claps` &rarr; Executes tasks based on your instructions
+- **Dangerous operations** &rarr; Requests approval via Slack modal (with optional comments)
+- **When judgment is needed** &rarr; Asks questions through Slack
 
-## クイックスタート
+## Key Features
+
+| Feature | Description |
+|---------|-------------|
+| **Worktree isolation** | Each issue gets an independent worktree, keeping the main branch clean |
+| **Auto PR creation** | Automatically commits, pushes, and creates PRs upon completion |
+| **Headless execution** | Runs Claude CLI in headless mode (`-p`) with hook-based permission control |
+| **Slack thread updates** | Real-time progress notifications in Slack threads |
+| **Modal approval** | Approve/deny with optional comment input |
+| **Session continuity** | Continues conversations within the same thread/issue |
+| **Slash command management** | Manage whitelists, repos, and user mappings via `/claps` |
+| **Customizable persona** | Fully customizable character settings and message templates |
+
+## Quick Start
 
 ```bash
-# 依存インストール
+# Install dependencies
 npm install
 
-# 環境変数設定
+# Configure environment variables
 cp .env.example .env
-# .env を編集して認証情報を設定
+# Edit .env with your credentials
 
-# ビルド
+# Build
 npm run build
 
-# 起動
+# Start
 npm start
 ```
 
-## 必要な環境
+## Requirements
 
-| ツール | バージョン | 用途 |
-|--------|-----------|------|
-| Node.js | >= 20.0.0 | ランタイム |
-| Claude CLI | 最新 | AI実行エンジン |
-| Git | >= 2.20 | worktree機能 |
-| GitHub CLI (gh) | 最新 | PR作成 |
+| Tool | Version | Purpose |
+|------|---------|---------|
+| Node.js | >= 20.0.0 | Runtime |
+| Claude CLI | Latest | AI execution engine |
+| Git | >= 2.20 | Worktree support |
+| GitHub CLI (gh) | Latest | PR creation |
 
-## 環境変数
+## Environment Variables
 
-### 必須
+### Required
 
-| 項目 | 形式 | 説明 |
-|------|------|------|
+| Variable | Format | Description |
+|----------|--------|-------------|
 | `SLACK_BOT_TOKEN` | `xoxb-...` | Slack Bot Token |
 | `SLACK_APP_TOKEN` | `xapp-...` | Slack App Token (Socket Mode) |
-| `SLACK_CHANNEL_ID` | `C0123456789` | 通知先チャンネルID |
-| `SLACK_TEAM_ID` | `T0123456789` | SlackワークスペースID |
+| `SLACK_CHANNEL_ID` | `C0123456789` | Notification channel ID |
+| `SLACK_TEAM_ID` | `T0123456789` | Slack workspace ID |
 | `GITHUB_TOKEN` | `github_pat_...` | GitHub Personal Access Token |
-| `GITHUB_REPOS` | `owner/repo1,owner/repo2` | 監視対象リポジトリ（カンマ区切り） |
+| `GITHUB_REPOS` | `owner/repo1,owner/repo2` | Monitored repositories (comma-separated) |
 
-### 任意
+### Optional
 
-| 項目 | デフォルト | 説明 |
-|------|-----------|------|
-| `ANTHROPIC_API_KEY` | - | Anthropic API Key（Max Plan使用時は不要） |
-| `APPROVAL_SERVER_PORT` | `3001` | 承認サーバーポート |
-| `GITHUB_POLL_INTERVAL` | `300000` | GitHub監視間隔（ミリ秒） |
-| `ADMIN_SLACK_USER` | - | 管理者のSlackユーザーID |
-| `ALLOWED_GITHUB_USERS` | - | 許可するGitHubユーザー（カンマ区切り、初期値） |
-| `ALLOWED_SLACK_USERS` | - | 許可するSlackユーザーID（カンマ区切り、初期値） |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ANTHROPIC_API_KEY` | - | Anthropic API Key (not required with Max Plan) |
+| `APPROVAL_SERVER_PORT` | `3001` | Approval server port |
+| `GITHUB_POLL_INTERVAL` | `300000` | GitHub polling interval (ms) |
+| `ADMIN_SLACK_USER` | - | Admin Slack user ID |
+| `ALLOWED_GITHUB_USERS` | - | Allowed GitHub users (comma-separated, initial value) |
+| `ALLOWED_SLACK_USERS` | - | Allowed Slack user IDs (comma-separated, initial value) |
 
-## 使い方
+## Usage
 
-### GitHub Issue から自動対応
+### Automatic handling from GitHub Issues
 
-1. Issue を作成
-2. タイトルまたは本文に `[claps]` を含める
-3. claps が自動検知して処理開始
-4. 完了後、PRが自動作成される
+1. Create an issue
+2. Include `[claps]` in the title or body
+3. CLAPS auto-detects and starts processing
+4. A PR is automatically created upon completion
 
 ```markdown
-# Issue タイトル例
-[claps] ログイン画面のバグを修正
+# Example issue title
+[claps] Fix login screen bug
 
-# Issue 本文例
-ログインボタンが反応しない問題を修正してください。
+# Example issue body
+Please fix the issue where the login button is unresponsive.
 ```
 
-### Slack から指示
+### Instruct via Slack
 
 ```
-@claps このファイルのテストを書いて
+@claps Write tests for this file
 ```
 
-### Slack コマンドで管理
+### Manage via Slack commands
 
 ```
-/claps help                              → ヘルプ表示
-/claps repos                             → 監視リポジトリ一覧
-/claps owner/repo メッセージ              → 指定リポジトリでClaude実行
+/claps help                              Show help
+/claps repos                             List monitored repos
+/claps owner/repo message                Run Claude on specified repo
 ```
 
-**管理者コマンド（`ADMIN_SLACK_USER` で指定されたユーザーのみ）:**
+**Admin commands (only for `ADMIN_SLACK_USER`):**
 
 ```
-/claps add-repo owner/repo               → 監視リポジトリ追加
-/claps remove-repo owner/repo            → 監視リポジトリ削除
-/claps whitelist                         → ホワイトリスト表示（マッピング含む）
-/claps whitelist add @user               → Slackユーザーをホワイトリストに追加
-/claps whitelist add @user github-name   → Slack + GitHub + マッピングを同時登録
-/claps whitelist add-github username     → GitHubユーザーのみ追加
-/claps whitelist remove @user            → Slackユーザー削除（関連マッピングも削除）
-/claps whitelist remove-github username  → GitHubユーザー削除（関連マッピングも削除）
+/claps add-repo owner/repo               Add monitored repo
+/claps remove-repo owner/repo            Remove monitored repo
+/claps whitelist                         Show whitelist (including mappings)
+/claps whitelist add @user               Add Slack user to whitelist
+/claps whitelist add @user github-name   Register Slack + GitHub + mapping
+/claps whitelist add-github username     Add GitHub user only
+/claps whitelist remove @user            Remove Slack user (and related mappings)
+/claps whitelist remove-github username  Remove GitHub user (and related mappings)
 ```
 
-## 利用可能なスクリプト
+## Customization
 
-| コマンド | 説明 |
-|----------|------|
-| `npm run build` | TypeScriptをコンパイル |
-| `npm start` | 本番モードで起動 |
-| `npm run dev` | 開発モードで起動（ホットリロード） |
-| `npm run lint` | ESLintで静的解析 |
-| `npm run typecheck` | TypeScriptの型チェック |
+### Character Persona
 
-## ドキュメント
+Create `~/.claps/character.md` to define a custom character prompt for Claude responses. If not present, the default persona is used.
 
-- [設計書](./docs/DESIGN.md) - システム構成、処理フロー、実装詳細
-- [開発者ガイド](./docs/CONTRIB.md) - 開発環境セットアップ、コーディング規約
-- [運用手順書](./docs/RUNBOOK.md) - デプロイ、監視、トラブルシューティング
+### Message Templates
 
-## ライセンス
+Create `~/.claps/messages.json` to customize bot messages:
+
+```json
+{
+  "emoji": "🤖",
+  "slackEmoji": ":robot_face:",
+  "name": "MyBot",
+  "messages": {
+    "task.started": "{emoji} Roger! Starting: {description}",
+    "task.completed": "{emoji} Done! {message}"
+  }
+}
+```
+
+See `src/messages.ts` for all available message keys.
+
+## Available Scripts
+
+| Command | Description |
+|---------|-------------|
+| `npm run build` | Compile TypeScript |
+| `npm start` | Start in production mode |
+| `npm run dev` | Start in dev mode (hot reload) |
+| `npm run lint` | Run ESLint |
+| `npm run typecheck` | TypeScript type checking |
+
+## Documentation
+
+- [Design Document](./docs/DESIGN.md) - System architecture, processing flow, implementation details
+- [Contributing Guide](./docs/CONTRIB.md) - Development setup, coding conventions
+- [Runbook](./docs/RUNBOOK.md) - Deployment, monitoring, troubleshooting
+
+## License
 
 MIT
