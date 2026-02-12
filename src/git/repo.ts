@@ -1,5 +1,5 @@
 /**
- * sumomo - リポジトリ管理
+ * claps - リポジトリ管理
  * 監視対象リポジトリの自動クローン・管理機能を提供する
  */
 
@@ -9,30 +9,30 @@ import * as os from 'os';
 import * as path from 'path';
 
 /**
- * .sumomo ディレクトリのパスを取得する
- * すべてのデータは ~/.sumomo/ に保存される
+ * .claps ディレクトリのパスを取得する
+ * すべてのデータは ~/.claps/ に保存される
  */
-export function GetSumomoDir(): string {
-  return path.join(os.homedir(), '.sumomo');
+export function GetClapsDir(): string {
+  return path.join(os.homedir(), '.claps');
 }
 
 /**
  * リポジトリのローカルパスを取得する
  * @param owner リポジトリオーナー
  * @param repo リポジトリ名
- * @returns .sumomo/repos/{owner}/{repo} のパス
+ * @returns .claps/repos/{owner}/{repo} のパス
  */
 export function GetRepoPath(owner: string, repo: string): string {
-  return path.join(GetSumomoDir(), 'repos', owner, repo);
+  return path.join(GetClapsDir(), 'repos', owner, repo);
 }
 
 /**
  * 汎用ワークスペースのパスを取得する
  * リポジトリ指定なしの Slack タスクで使用する作業ディレクトリ
- * @returns .sumomo/workspace のパス
+ * @returns .claps/workspace のパス
  */
 export function GetWorkspacePath(): string {
-  return path.join(GetSumomoDir(), 'workspace');
+  return path.join(GetClapsDir(), 'workspace');
 }
 
 /**

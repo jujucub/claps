@@ -77,23 +77,23 @@ Unity MCPのツールを使用する。
 Editorスクリプトを作成して実行する。
 
 ```csharp
-// Assets/Editor/Sumomo/SumomoEditorTask.cs
+// Assets/Editor/Claps/ClapsEditorTask.cs
 using UnityEditor;
 using UnityEngine;
 
-public static class SumomoEditorTask
+public static class ClapsEditorTask
 {
-    [MenuItem("Sumomo/Execute Current Task")]
+    [MenuItem("Claps/Execute Current Task")]
     public static void Execute()
     {
         // ここに複雑な操作を記述
 
-        Debug.Log("[Sumomo] タスク完了");
+        Debug.Log("[Claps] タスク完了");
     }
 }
 ```
 
-実行後は `Assets/Editor/Sumomo/` 内の一時スクリプトを削除する。
+実行後は `Assets/Editor/Claps/` 内の一時スクリプトを削除する。
 
 ## Unity MCP 主要ツール
 

@@ -1,6 +1,6 @@
 /**
- * sumomo - キャラクタ設定管理
- * ~/.sumomo/character.md からキャラクタ設定を読み込む
+ * claps - キャラクタ設定管理
+ * ~/.claps/character.md からキャラクタ設定を読み込む
  * ファイルが存在しない場合はデフォルトのすももキャラクタを使用
  */
 
@@ -47,7 +47,7 @@ const DEFAULT_CHARACTER_PROMPT = `あなたは「すもも」です。CLAMPの�
 この口調で応答しながら、技術的な内容は正確に伝えてください。`;
 
 // キャラクタ設定ファイルのパス
-const CHARACTER_FILE_PATH = path.join(os.homedir(), '.sumomo', 'character.md');
+const CHARACTER_FILE_PATH = path.join(os.homedir(), '.claps', 'character.md');
 
 // キャッシュ（ファイル変更検知用）
 let _cachedPrompt: string | undefined;
@@ -55,7 +55,7 @@ let _cachedMtime: number | undefined;
 
 /**
  * キャラクタ設定を読み込む
- * ~/.sumomo/character.md が存在すればその内容を使用し、なければデフォルトを返す
+ * ~/.claps/character.md が存在すればその内容を使用し、なければデフォルトを返す
  */
 export function LoadCharacterPrompt(): string {
   try {
@@ -74,7 +74,7 @@ export function LoadCharacterPrompt(): string {
 
     _cachedPrompt = content;
     _cachedMtime = mtime;
-    console.log('📋 キャラクタ設定を読み込みました: ~/.sumomo/character.md');
+    console.log('📋 キャラクタ設定を読み込みました: ~/.claps/character.md');
     return content;
   } catch {
     // ファイルが存在しない場合はデフォルトを使用

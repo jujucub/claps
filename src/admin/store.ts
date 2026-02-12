@@ -1,6 +1,6 @@
 /**
- * sumomo - 管理設定ストア
- * ~/.sumomo/admin-config.json に設定を永続化する
+ * claps - 管理設定ストア
+ * ~/.claps/admin-config.json に設定を永続化する
  */
 
 import fs from 'fs';
@@ -9,7 +9,7 @@ import os from 'os';
 import type { AdminConfig } from '../types/index.js';
 
 // 設定ファイルパス
-const CONFIG_DIR = path.join(os.homedir(), '.sumomo');
+const CONFIG_DIR = path.join(os.homedir(), '.claps');
 const CONFIG_FILE = path.join(CONFIG_DIR, 'admin-config.json');
 
 // 変更通知コールバック

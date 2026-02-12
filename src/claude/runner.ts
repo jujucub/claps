@@ -1,5 +1,5 @@
 /**
- * sumomo - Claude CLI ランナー
+ * claps - Claude CLI ランナー
  * Claude CLI を子プロセスとして実行する
  */
 
@@ -32,7 +32,7 @@ export interface RunnerOptions {
 
 /**
  * キャラクタ設定を取得する（後方互換性のためのエクスポート）
- * 実際の設定は ~/.sumomo/character.md から読み込まれる
+ * 実際の設定は ~/.claps/character.md から読み込まれる
  */
 export function GetSystemPrompt(): string {
   return LoadCharacterPrompt();
@@ -123,7 +123,7 @@ export class ClaudeRunner {
           env: {
             ...process.env,
             CLAUDE_PROJECT_DIR: options.workingDirectory,
-            SUMOMO_TASK_ID: taskId,
+            CLAPS_TASK_ID: taskId,
             APPROVAL_SERVER_URL: `http://localhost:${options.approvalServerPort ?? 3001}`,
           },
           stdio: ['pipe', 'pipe', 'pipe'],

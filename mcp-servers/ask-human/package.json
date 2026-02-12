@@ -1,5 +1,5 @@
 {
-  "name": "@sumomo/ask-human",
+  "name": "@claps/ask-human",
   "version": "0.1.0",
   "description": "MCP server for asking human questions via Slack",
   "main": "dist/index.js",

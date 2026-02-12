@@ -1,5 +1,5 @@
 /**
- * sumomo - 型定義
+ * claps - 型定義
  */
 
 // タスクの種類
@@ -29,7 +29,7 @@ export interface GitHubTaskMetadata {
   readonly issueNumber: number;
   readonly issueTitle: string;
   readonly issueUrl: string;
-  readonly requestingUser?: string; // [sumomo]タグを投稿したGitHubユーザー
+  readonly requestingUser?: string; // [claps]タグを投稿したGitHubユーザー
   slackThreadTs?: string; // Issue用のSlackスレッド
 }
 
@@ -108,7 +108,7 @@ export interface UserMapping {
   slack: string;
 }
 
-// 管理設定（Slackコマンドで管理、~/.sumomo/admin-config.json に永続化）
+// 管理設定（Slackコマンドで管理、~/.claps/admin-config.json に永続化）
 export interface AdminConfig {
   allowedGithubUsers: string[];
   allowedSlackUsers: string[];

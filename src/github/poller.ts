@@ -1,6 +1,6 @@
 /**
- * sumomo - GitHub Poller
- * GitHub Issue を定期的にポーリングして [sumomo] タグを検出する
+ * claps - GitHub Poller
+ * GitHub Issue を定期的にポーリングして [claps] タグを検出する
  */
 
 import { Octokit } from '@octokit/rest';
@@ -250,21 +250,21 @@ async function PollRepoIssues(
     // 既に処理済みの場合はスキップ
     if (_processedIssues.has(issueKey)) continue;
 
-    // Issue 本文に [sumomo] が含まれているかチェック
+    // Issue 本文に [claps] が含まれているかチェック
     const body = issue.body ?? '';
     const issueAuthor = issue.user?.login ?? '';
 
     let requestingUser: string | undefined;
 
-    if (ContainsSumomoMention(body)) {
-      // Issue本文に[sumomo]がある場合、Issue作成者をチェック
+    if (ContainsClapsTag(body)) {
+      // Issue本文に[claps]がある場合、Issue作成者をチェック
       requestingUser = issueAuthor;
     } else {
-      // コメントに[sumomo]があるかチェック（投稿者も取得）
+      // コメントに[claps]があるかチェック（投稿者も取得）
       requestingUser = await FindAllowedUserInComments(owner, repo, issue.number);
     }
 
-    // [sumomo]タグが見つからない場合はスキップ
+    // [claps]タグが見つからない場合はスキップ
     if (!requestingUser) continue;
 
     // ホワイトリストチェック
@@ -284,7 +284,7 @@ async function PollRepoIssues(
     // 処理対象として記録
     _processedIssues.add(issueKey);
 
-    console.log(`Found issue with [sumomo] tag from ${requestingUser}: ${issueKey}`);
+    console.log(`Found issue with [claps] tag from ${requestingUser}: ${issueKey}`);
 
     const metadata: GitHubTaskMetadata = {
       source: 'github',
@@ -304,8 +304,8 @@ async function PollRepoIssues(
 }
 
 /**
- * コメントに [sumomo] が含まれているかチェックし、投稿者を返す
- * 複数のコメントに[sumomo]がある場合は最初に見つかったものを返す
+ * コメントに [claps] が含まれているかチェックし、投稿者を返す
+ * 複数のコメントに[claps]がある場合は最初に見つかったものを返す
  */
 async function FindAllowedUserInComments(
   owner: string,
@@ -323,7 +323,7 @@ async function FindAllowedUserInComments(
     });
 
     for (const comment of comments) {
-      if (ContainsSumomoMention(comment.body ?? '')) {
+      if (ContainsClapsTag(comment.body ?? '')) {
         const login = comment.user?.login;
         // loginがない場合は次のコメントをチェック
         if (login) {
@@ -339,11 +339,11 @@ async function FindAllowedUserInComments(
 }
 
 /**
- * テキストに [sumomo] タグが含まれているかチェックする
+ * テキストに [claps] タグが含まれているかチェックする
  */
-function ContainsSumomoMention(text: string): boolean {
-  // [sumomo] タグを検出（大文字小文字を区別しない）
-  return text.toLowerCase().includes('[sumomo]');
+function ContainsClapsTag(text: string): boolean {
+  // [claps] タグを検出（大文字小文字を区別しない）
+  return text.toLowerCase().includes('[claps]');
 }
 
 /**

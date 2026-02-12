@@ -1,9 +1,9 @@
 #!/bin/bash
-# sumomo - ツール使用通知 Hook スクリプト
+# claps - ツール使用通知 Hook スクリプト
 # PreToolUse Hook として実行され、承認サーバーに作業ログを非同期送信する
 
-# sumomoタスクでなければ何もしない
-if [ -z "$SUMOMO_TASK_ID" ]; then
+# clapsタスクでなければ何もしない
+if [ -z "$CLAPS_TASK_ID" ]; then
   exit 0
 fi
 
@@ -11,7 +11,7 @@ fi
 INPUT=$(cat)
 
 # 認証トークンを読み込む
-AUTH_TOKEN_FILE="$HOME/.sumomo/auth-token"
+AUTH_TOKEN_FILE="$HOME/.claps/auth-token"
 if [ ! -f "$AUTH_TOKEN_FILE" ]; then
   exit 0
 fi

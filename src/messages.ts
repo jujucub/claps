@@ -1,6 +1,6 @@
 /**
- * sumomo - メッセージテンプレート管理
- * ~/.sumomo/messages.json からメッセージ設定を読み込む
+ * claps - メッセージテンプレート管理
+ * ~/.claps/messages.json からメッセージ設定を読み込む
  * ユーザーは emoji, name, 個別メッセージを自由にカスタマイズ可能
  */
 
@@ -32,7 +32,7 @@ const DEFAULT_MESSAGES: Readonly<Record<string, string>> = {
   'console.shutdownComplete': '{emoji} {name}、おやすみなさいなのです！',
 
   // --- 起動通知 ---
-  'morning.greeting': '{emoji} 朝でーす！{name}が起動したのでーす！@sumomo でメンションしてくださいなのです！',
+  'morning.greeting': '{emoji} 朝でーす！{name}が起動したのでーす！@claps でメンションしてくださいなのです！',
 
   // --- タスク進捗 ---
   'task.resumeIssue': 'Issue #{issueNumber} の作業を継続するのでーす！',
@@ -60,8 +60,8 @@ const DEFAULT_MESSAGES: Readonly<Record<string, string>> = {
   'command.start': '{emoji} あいっ！`{repo}` で処理を開始するのでーす！',
   'command.execution': '{emoji} *{name}コマンド実行*\nリポジトリ: `{repo}`\nリクエスト: {prompt}\n実行者: <@{userId}>',
   'command.started': '{emoji} `{repo}` で処理を開始したのでーす！スレッドで進捗を確認できます。',
-  'command.invalidRepo': '{emoji} リポジトリの形式が正しくないか、不明なコマンドなのです。\n\n使い方: `/sumomo owner/repo メッセージ`\nヘルプ: `/sumomo help`',
-  'command.noMessage': '{emoji} メッセージを入力してくださいなのです！\n\n例: `/sumomo owner/repo バグを修正して`',
+  'command.invalidRepo': '{emoji} リポジトリの形式が正しくないか、不明なコマンドなのです。\n\n使い方: `/claps owner/repo メッセージ`\nヘルプ: `/claps help`',
+  'command.noMessage': '{emoji} メッセージを入力してくださいなのです！\n\n例: `/claps owner/repo バグを修正して`',
   'command.adminOnly': '{emoji} このコマンドは管理者のみ使用できるのです。',
 
   // --- 内省 ---
@@ -74,14 +74,14 @@ const DEFAULT_MESSAGES: Readonly<Record<string, string>> = {
   'reflection.noResult': '{emoji} 内省の実行結果がなかったのです。アクティブユーザーがいないか、エラーが発生した可能性があります。',
   'reflection.enabled': '{emoji} 内省機能を有効化したのでーす！',
   'reflection.disabled': '{emoji} 内省機能を無効化したのでーす！',
-  'reflection.invalidTime': '{emoji} 時刻の形式が正しくないのです。\n使い方: `/sumomo reflection schedule HH:MM`',
+  'reflection.invalidTime': '{emoji} 時刻の形式が正しくないのです。\n使い方: `/claps reflection schedule HH:MM`',
   'reflection.scheduleChanged': '{emoji} 内省の実行時刻を {time} に変更したのでーす！',
-  'reflection.unknownCommand': '{emoji} 不明なサブコマンドなのです。\n使い方: `/sumomo reflection [run|enable|disable|schedule HH:MM]`',
+  'reflection.unknownCommand': '{emoji} 不明なサブコマンドなのです。\n使い方: `/claps reflection [run|enable|disable|schedule HH:MM]`',
 
   // --- リポジトリ管理 ---
   'repos.empty': '{emoji} 監視対象のリポジトリはまだ登録されていないのです。',
   'repos.list': '{emoji} *監視対象リポジトリ一覧* ({count}件)\n\n{repoList}',
-  'repos.invalidFormat': '{emoji} リポジトリの形式が正しくないのです。\n使い方: `/sumomo {command} owner/repo`',
+  'repos.invalidFormat': '{emoji} リポジトリの形式が正しくないのです。\n使い方: `/claps {command} owner/repo`',
   'repos.alreadyAdded': '{emoji} `{repo}` は既に監視対象に含まれているのです。',
   'repos.added': '{emoji} `{repo}` を監視対象に追加したのでーす！',
   'repos.notFound': '{emoji} `{repo}` は監視対象に含まれていないのです。',
@@ -89,19 +89,19 @@ const DEFAULT_MESSAGES: Readonly<Record<string, string>> = {
 
   // --- ホワイトリスト ---
   'whitelist.title': '{emoji} *ホワイトリスト*\n\n',
-  'whitelist.addMention': '{emoji} ユーザーを@メンションで指定してくださいなのです。\n使い方: `/sumomo whitelist {command}`',
+  'whitelist.addMention': '{emoji} ユーザーを@メンションで指定してくださいなのです。\n使い方: `/claps whitelist {command}`',
   'whitelist.invalidGithub': '{emoji} GitHubユーザー名が正しくないのです。\n英数字とハイフンのみ使用可能（1〜39文字）',
-  'whitelist.invalidGithubUsage': '{emoji} GitHubユーザー名が正しくないのです。\n英数字とハイフンのみ使用可能（1〜39文字）\n使い方: `/sumomo whitelist {command} username`',
+  'whitelist.invalidGithubUsage': '{emoji} GitHubユーザー名が正しくないのです。\n英数字とハイフンのみ使用可能（1〜39文字）\n使い方: `/claps whitelist {command} username`',
   'whitelist.alreadyExists': '{emoji} `{username}` は既にホワイトリストに含まれているのです。',
   'whitelist.githubAdded': '{emoji} GitHubユーザー `{username}` をホワイトリストに追加したのでーす！',
-  'whitelist.removeMention': '{emoji} ユーザーを@メンションで指定してくださいなのです。\n使い方: `/sumomo whitelist remove @user`',
+  'whitelist.removeMention': '{emoji} ユーザーを@メンションで指定してくださいなのです。\n使い方: `/claps whitelist remove @user`',
   'whitelist.notInList': '{emoji} <@{userId}> はホワイトリストに含まれていないのです。',
   'whitelist.cannotRemoveSelf': '{emoji} 自分自身をホワイトリストから削除することはできないのです。',
   'whitelist.removed': '{emoji} <@{userId}> をホワイトリストから削除したのでーす！',
   'whitelist.githubNotInList': '{emoji} `{username}` はホワイトリストに含まれていないのです。',
   'whitelist.githubRemoved': '{emoji} GitHubユーザー `{username}` をホワイトリストから削除したのでーす！',
   'whitelist.completed': '{emoji} 完了したのでーす！\n{results}',
-  'whitelist.unknownCommand': '{emoji} 不明なサブコマンドなのです。\n使い方: `/sumomo whitelist [add|add-github|remove|remove-github]`',
+  'whitelist.unknownCommand': '{emoji} 不明なサブコマンドなのです。\n使い方: `/claps whitelist [add|add-github|remove|remove-github]`',
 
   // --- 承認 ---
   'approval.onlyRequester': '{emoji} この承認はリクエストした人だけができるのです！',
@@ -124,7 +124,7 @@ const DEFAULT_MESSAGES: Readonly<Record<string, string>> = {
 };
 
 // 設定ファイルのパス
-const MESSAGES_FILE_PATH = path.join(os.homedir(), '.sumomo', 'messages.json');
+const MESSAGES_FILE_PATH = path.join(os.homedir(), '.claps', 'messages.json');
 
 // キャッシュ
 let _cachedConfig: MessageConfig | undefined;
@@ -165,7 +165,7 @@ function LoadMessageConfig(): MessageConfig {
 
     _cachedConfig = config;
     _cachedMtime = mtime;
-    console.log('📋 メッセージ設定を読み込みました: ~/.sumomo/messages.json');
+    console.log('📋 メッセージ設定を読み込みました: ~/.claps/messages.json');
     return config;
   } catch {
     return defaultConfig;

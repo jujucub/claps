@@ -1,5 +1,5 @@
 /**
- * sumomo - Git Worktree 管理
+ * claps - Git Worktree 管理
  * Issue ごとに独立した作業ディレクトリを提供する
  */
 
@@ -8,9 +8,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 
-// sumomoのPreToolUseフック設定（承認用）
+// clapsのPreToolUseフック設定（承認用）
 // matcher空文字列で全ツールに対してHookを実行
-const SUMOMO_APPROVAL_HOOK_CONFIG = {
+const CLAPS_APPROVAL_HOOK_CONFIG = {
   matcher: '',
   hooks: [
     {
@@ -21,8 +21,8 @@ const SUMOMO_APPROVAL_HOOK_CONFIG = {
   ],
 };
 
-// sumomoのPreToolUseフック設定（ツール使用通知用）
-const SUMOMO_NOTIFY_HOOK_CONFIG = {
+// clapsのPreToolUseフック設定（ツール使用通知用）
+const CLAPS_NOTIFY_HOOK_CONFIG = {
   matcher: '.*',
   hooks: [
     {
@@ -52,7 +52,7 @@ export async function CreateWorktree(
   repo: string,
   issueNumber: number
 ): Promise<WorktreeInfo> {
-  const branchName = `sumomo/issue-${issueNumber}`;
+  const branchName = `claps/issue-${issueNumber}`;
   const worktreeDir = path.join(baseDir, '.worktrees', `issue-${issueNumber}`);
   const worktreeKey = `${owner}/${repo}#${issueNumber}`;
 
@@ -119,7 +119,7 @@ export async function CreateWorktree(
     }
   );
 
-  // sumomoのPreToolUseフック設定を注入 + プロジェクト信頼を確立
+  // clapsのPreToolUseフック設定を注入 + プロジェクト信頼を確立
   await InjectClaudeSettings(worktreeDir);
   await WarmUpClaudeProject(worktreeDir);
 
@@ -323,7 +323,7 @@ export async function CleanupAllWorktrees(): Promise<void> {
 }
 
 /**
- * worktree に sumomo の .claude 設定を注入する
+ * worktree に claps の .claude 設定を注入する
  * 既存の settings.json がある場合はマージする
  */
 export async function InjectClaudeSettings(worktreeDir: string): Promise<void> {
@@ -363,8 +363,8 @@ export async function InjectClaudeSettings(worktreeDir: string): Promise<void> {
   }
   const preToolUseHooks = hooks['PreToolUse'] as Array<Record<string, unknown>>;
 
-  // sumomo の承認hook が既に存在するか確認（コマンド文字列で判定）
-  const hasSumomoApprovalHook = preToolUseHooks.some(
+  // claps の承認hook が既に存在するか確認（コマンド文字列で判定）
+  const hasClapsApprovalHook = preToolUseHooks.some(
     (hook) => {
       const hookList = hook['hooks'] as Array<Record<string, unknown>> | undefined;
       return hookList?.some((h) => {
@@ -374,13 +374,13 @@ export async function InjectClaudeSettings(worktreeDir: string): Promise<void> {
     }
   );
 
-  if (!hasSumomoApprovalHook) {
-    // sumomo の承認hook を追加（先頭に追加して優先度を上げる）
-    preToolUseHooks.unshift(SUMOMO_APPROVAL_HOOK_CONFIG);
+  if (!hasClapsApprovalHook) {
+    // claps の承認hook を追加（先頭に追加して優先度を上げる）
+    preToolUseHooks.unshift(CLAPS_APPROVAL_HOOK_CONFIG);
   }
 
-  // sumomo の通知hook が既に存在するか確認
-  const hasSumomoNotifyHook = preToolUseHooks.some(
+  // claps の通知hook が既に存在するか確認
+  const hasClapsNotifyHook = preToolUseHooks.some(
     (hook) => {
       const hookList = hook['hooks'] as Array<Record<string, unknown>> | undefined;
       return hookList?.some((h) => {
@@ -390,9 +390,9 @@ export async function InjectClaudeSettings(worktreeDir: string): Promise<void> {
     }
   );
 
-  if (!hasSumomoNotifyHook) {
-    // sumomo の通知hook を追加（末尾に追加、承認hookの後に実行）
-    preToolUseHooks.push(SUMOMO_NOTIFY_HOOK_CONFIG);
+  if (!hasClapsNotifyHook) {
+    // claps の通知hook を追加（末尾に追加、承認hookの後に実行）
+    preToolUseHooks.push(CLAPS_NOTIFY_HOOK_CONFIG);
   }
 
   // settings.json を書き込み
@@ -402,11 +402,11 @@ export async function InjectClaudeSettings(worktreeDir: string): Promise<void> {
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);
   // dist/git/worktree.js -> ../../.claude/hooks/
-  const sumomoRoot = path.resolve(__dirname, '..', '..');
+  const clapsRoot = path.resolve(__dirname, '..', '..');
   const hookFiles = ['slack-approval.py', 'tool-notify.sh'];
 
   for (const hookFile of hookFiles) {
-    const sourceHookPath = path.join(sumomoRoot, '.claude', 'hooks', hookFile);
+    const sourceHookPath = path.join(clapsRoot, '.claude', 'hooks', hookFile);
     const destHookPath = path.join(hooksDir, hookFile);
 
     if (fs.existsSync(sourceHookPath)) {
@@ -418,13 +418,13 @@ export async function InjectClaudeSettings(worktreeDir: string): Promise<void> {
     }
   }
 
-  console.log(`Injected sumomo .claude settings into ${worktreeDir}`);
+  console.log(`Injected claps .claude settings into ${worktreeDir}`);
 }
 
 // ワークスペース用のスターター CLAUDE.md
-const WORKSPACE_CLAUDE_MD = `# Sumomo Workspace
+const WORKSPACE_CLAUDE_MD = `# Claps Workspace
 
-このディレクトリは sumomo の汎用ワークスペースです。
+このディレクトリは claps の汎用ワークスペースです。
 リポジトリ指定なしの Slack タスクがここで実行されます。
 
 ## 注意事項
@@ -484,7 +484,7 @@ async function WarmUpClaudeProject(workspacePath: string): Promise<void> {
   }
 
   console.log('Warming up Claude CLI project via tmux (interactive trust)...');
-  const sessionName = 'sumomo-warmup';
+  const sessionName = 'claps-warmup';
 
   // 既存セッションをクリーンアップ
   try {

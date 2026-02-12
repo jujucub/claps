@@ -1,6 +1,6 @@
 # Runbook (運用手順書)
 
-> sumomo の運用・保守に関する手順書
+> claps の運用・保守に関する手順書
 
 ## 目次
 
@@ -19,22 +19,22 @@
 
 ```bash
 # 1. リポジトリをクローン
-git clone https://github.com/jujucub/sumomo.git
-cd sumomo
+git clone https://github.com/jujucub/claps.git
+cd claps
 
 # 2. 依存関係をインストール
 npm install
 
 # 3. 環境変数を設定
-mkdir -p ~/.sumomo
-cp .env.example ~/.sumomo/.env
-# ~/.sumomo/.env を編集して認証情報を設定
+mkdir -p ~/.claps
+cp .env.example ~/.claps/.env
+# ~/.claps/.env を編集して認証情報を設定
 
 # 4. ビルド
 npm run build
 
 # 5. 起動（バックグラウンド）
-nohup npm start > sumomo.log 2>&1 &
+nohup npm start > claps.log 2>&1 &
 ```
 
 ### 更新デプロイ
@@ -52,21 +52,21 @@ npm run build
 # 4. プロセスを再起動
 # (既存プロセスを停止してから起動)
 pkill -f "node dist/index.js"
-nohup npm start > sumomo.log 2>&1 &
+nohup npm start > claps.log 2>&1 &
 ```
 
 ### systemd サービスとして運用（推奨）
 
 ```ini
-# /etc/systemd/system/sumomo.service
+# /etc/systemd/system/claps.service
 [Unit]
-Description=sumomo - Claude Automation Bot
+Description=claps - Claude Automation Bot
 After=network.target
 
 [Service]
 Type=simple
 User=your-user
-WorkingDirectory=/path/to/sumomo
+WorkingDirectory=/path/to/claps
 ExecStart=/usr/bin/npm start
 Restart=always
 RestartSec=10
@@ -79,14 +79,14 @@ WantedBy=multi-user.target
 ```bash
 # サービスを有効化・起動
 sudo systemctl daemon-reload
-sudo systemctl enable sumomo
-sudo systemctl start sumomo
+sudo systemctl enable claps
+sudo systemctl start claps
 
 # ステータス確認
-sudo systemctl status sumomo
+sudo systemctl status claps
 
 # ログ確認
-sudo journalctl -u sumomo -f
+sudo journalctl -u claps -f
 ```
 
 ---
@@ -100,10 +100,10 @@ sudo journalctl -u sumomo -f
 npm start
 
 # バックグラウンド起動
-nohup npm start > sumomo.log 2>&1 &
+nohup npm start > claps.log 2>&1 &
 
 # systemd使用時
-sudo systemctl start sumomo
+sudo systemctl start claps
 ```
 
 起動時のログ:
@@ -120,7 +120,7 @@ sudo systemctl start sumomo
 pkill -f "node dist/index.js"
 
 # systemd使用時
-sudo systemctl stop sumomo
+sudo systemctl stop claps
 ```
 
 停止時のログ:
@@ -133,7 +133,7 @@ sudo systemctl stop sumomo
 
 ```bash
 # systemd使用時
-sudo systemctl restart sumomo
+sudo systemctl restart claps
 ```
 
 ---
@@ -168,13 +168,13 @@ lsof -i :3002  # 管理画面
 
 ```bash
 # リアルタイムログ監視
-tail -f sumomo.log
+tail -f claps.log
 
 # エラーのみ表示
-grep -i error sumomo.log
+grep -i error claps.log
 
 # systemd使用時
-sudo journalctl -u sumomo -f
+sudo journalctl -u claps -f
 ```
 
 ### 重要なログパターン
@@ -231,14 +231,14 @@ Error: Bad credentials
 
 **対処:**
 ```bash
-# sumomoのセッションを一覧
-tmux ls | grep sumomo
+# clapsのセッションを一覧
+tmux ls | grep claps
 
 # 特定セッションを終了
-tmux kill-session -t sumomo-owner-repo-123
+tmux kill-session -t claps-owner-repo-123
 
-# 全sumomoセッションを終了
-tmux ls | grep sumomo | cut -d: -f1 | xargs -I{} tmux kill-session -t {}
+# 全clapsセッションを終了
+tmux ls | grep claps | cut -d: -f1 | xargs -I{} tmux kill-session -t {}
 ```
 
 ---
@@ -250,10 +250,10 @@ tmux ls | grep sumomo | cut -d: -f1 | xargs -I{} tmux kill-session -t {}
 **対処:**
 ```bash
 # worktree一覧を確認
-ls ~/.sumomo/repos/owner/repo/.worktrees/
+ls ~/.claps/repos/owner/repo/.worktrees/
 
 # 特定worktreeを削除
-git -C ~/.sumomo/repos/owner/repo worktree remove .worktrees/issue-123 --force
+git -C ~/.claps/repos/owner/repo worktree remove .worktrees/issue-123 --force
 ```
 
 ---
@@ -306,7 +306,7 @@ export APPROVAL_SERVER_PORT=3003
 
 ```bash
 # 1. 現在のプロセスを停止
-sudo systemctl stop sumomo  # または pkill
+sudo systemctl stop claps  # または pkill
 
 # 2. 前のバージョンにチェックアウト
 git log --oneline -10  # コミット履歴確認
@@ -317,20 +317,20 @@ npm install
 npm run build
 
 # 4. 起動
-sudo systemctl start sumomo
+sudo systemctl start claps
 ```
 
 ### 緊急ロールバック
 
 ```bash
 # 1. 即時停止
-sudo systemctl stop sumomo
+sudo systemctl stop claps
 
 # 2. 最後の安定版にリセット
 git reset --hard <stable-commit>
 
 # 3. 再ビルド・起動
-npm install && npm run build && sudo systemctl start sumomo
+npm install && npm run build && sudo systemctl start claps
 ```
 
 ---
@@ -342,8 +342,8 @@ npm install && npm run build && sudo systemctl start sumomo
 #### ログローテーション
 
 ```bash
-# logrotate設定 (/etc/logrotate.d/sumomo)
-/path/to/sumomo/sumomo.log {
+# logrotate設定 (/etc/logrotate.d/claps)
+/path/to/claps/claps.log {
     daily
     rotate 7
     compress
@@ -357,17 +357,17 @@ npm install && npm run build && sudo systemctl start sumomo
 
 ```bash
 # worktreeサイズ確認
-du -sh ~/.sumomo/repos/
+du -sh ~/.claps/repos/
 
 # 古いworktreeを削除
-find ~/.sumomo/repos -name ".worktrees" -type d -exec du -sh {} \;
+find ~/.claps/repos -name ".worktrees" -type d -exec du -sh {} \;
 ```
 
 #### tmuxセッションクリーンアップ
 
 ```bash
 # 古いセッションを削除（週次推奨）
-tmux ls | grep sumomo | cut -d: -f1 | xargs -I{} tmux kill-session -t {}
+tmux ls | grep claps | cut -d: -f1 | xargs -I{} tmux kill-session -t {}
 ```
 
 ### 設定変更
@@ -379,7 +379,7 @@ tmux ls | grep sumomo | cut -d: -f1 | xargs -I{} tmux kill-session -t {}
 - 許可Slackユーザー
 - 監視対象リポジトリ
 
-または `~/.sumomo/admin-config.json` を直接編集:
+または `~/.claps/admin-config.json` を直接編集:
 
 ```json
 {
@@ -416,4 +416,4 @@ GITHUB_POLL_INTERVAL=600000  # 10分
 
 - [設計書](./DESIGN.md)
 - [開発者ガイド](./CONTRIB.md)
-- [GitHub リポジトリ](https://github.com/jujucub/sumomo)
+- [GitHub リポジトリ](https://github.com/jujucub/claps)

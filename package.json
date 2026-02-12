@@ -1,7 +1,7 @@
 {
-  "name": "sumomo",
+  "name": "claps",
   "version": "0.1.0",
-  "description": "GitHub Issue / Slack 連携 Claude 自動対応システム",
+  "description": "CLAPS - Claude Approval Persona Service",
   "main": "dist/index.js",
   "type": "module",
   "scripts": {

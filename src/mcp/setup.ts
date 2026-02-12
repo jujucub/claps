@@ -1,5 +1,5 @@
 /**
- * sumomo - MCP (Model Context Protocol) 設定管理
+ * claps - MCP (Model Context Protocol) 設定管理
  * ~/.claude.json にMCPサーバー設定を追加する
  */
 
@@ -19,7 +19,7 @@ interface ClaudeConfig {
 }
 
 /**
- * グローバルな~/.claude.jsonにsumomo用のMCPサーバー設定を追加する
+ * グローバルな~/.claude.jsonにclaps用のMCPサーバー設定を追加する
  * 既存の設定はマージして保持する
  */
 export function SetupGlobalMcpConfig(): void {
@@ -40,26 +40,26 @@ export function SetupGlobalMcpConfig(): void {
   // 既存のmcpServersを保持
   const existingMcpServers = config.mcpServers ?? {};
 
-  // sumomo用のMCPサーバーを追加（プレフィックスで衝突回避）
-  const sumomoMcpServers: Record<string, McpServerConfig> = {};
+  // claps用のMCPサーバーを追加（プレフィックスで衝突回避）
+  const clapsMcpServers: Record<string, McpServerConfig> = {};
 
   // GitHub MCP Server（GITHUB_TOKENが設定されている場合のみ）
   if (process.env['GITHUB_TOKEN']) {
-    sumomoMcpServers['sumomo-github'] = {
+    clapsMcpServers['claps-github'] = {
       command: 'npx',
       args: ['-y', '@modelcontextprotocol/server-github'],
       env: {
         GITHUB_PERSONAL_ACCESS_TOKEN: process.env['GITHUB_TOKEN'],
       },
     };
-    console.log('✅ sumomo-github MCP Server を設定しました');
+    console.log('✅ claps-github MCP Server を設定しました');
   } else {
-    console.log('⏭️ GITHUB_TOKEN が未設定のため sumomo-github をスキップ');
+    console.log('⏭️ GITHUB_TOKEN が未設定のため claps-github をスキップ');
   }
 
   // Slack MCP Server（SLACK_BOT_TOKENとSLACK_TEAM_IDが両方設定されている場合のみ）
   if (process.env['SLACK_BOT_TOKEN'] && process.env['SLACK_TEAM_ID']) {
-    sumomoMcpServers['sumomo-slack'] = {
+    clapsMcpServers['claps-slack'] = {
       command: 'npx',
       args: ['-y', '@modelcontextprotocol/server-slack'],
       env: {
@@ -67,26 +67,26 @@ export function SetupGlobalMcpConfig(): void {
         SLACK_TEAM_ID: process.env['SLACK_TEAM_ID'],
       },
     };
-    console.log('✅ sumomo-slack MCP Server を設定しました');
+    console.log('✅ claps-slack MCP Server を設定しました');
   } else {
     const missing: string[] = [];
     if (!process.env['SLACK_BOT_TOKEN']) missing.push('SLACK_BOT_TOKEN');
     if (!process.env['SLACK_TEAM_ID']) missing.push('SLACK_TEAM_ID');
-    console.log(`⏭️ ${missing.join(', ')} が未設定のため sumomo-slack をスキップ`);
+    console.log(`⏭️ ${missing.join(', ')} が未設定のため claps-slack をスキップ`);
   }
 
-  // 設定をマージ（既存のsumomo-*は上書き、それ以外は保持）
+  // 設定をマージ（既存のclaps-*は上書き、それ以外は保持）
   const mergedMcpServers: Record<string, McpServerConfig> = {};
 
-  // 既存の非sumomo設定を保持
+  // 既存の非claps設定を保持
   for (const [key, value] of Object.entries(existingMcpServers)) {
-    if (!key.startsWith('sumomo-')) {
+    if (!key.startsWith('claps-')) {
       mergedMcpServers[key] = value;
     }
   }
 
-  // sumomo設定を追加
-  for (const [key, value] of Object.entries(sumomoMcpServers)) {
+  // claps設定を追加
+  for (const [key, value] of Object.entries(clapsMcpServers)) {
     mergedMcpServers[key] = value;
   }
 
@@ -99,10 +99,10 @@ export function SetupGlobalMcpConfig(): void {
 }
 
 /**
- * sumomo用のMCPサーバー設定を削除する
+ * claps用のMCPサーバー設定を削除する
  * （アンインストール時などに使用）
  */
-export function RemoveSumomoMcpConfig(): void {
+export function RemoveClapsMcpConfig(): void {
   const configPath = path.join(os.homedir(), '.claude.json');
 
   if (!fs.existsSync(configPath)) {
@@ -117,10 +117,10 @@ export function RemoveSumomoMcpConfig(): void {
       return;
     }
 
-    // sumomo-*の設定を削除
+    // claps-*の設定を削除
     const filteredMcpServers: Record<string, McpServerConfig> = {};
     for (const [key, value] of Object.entries(config.mcpServers)) {
-      if (!key.startsWith('sumomo-')) {
+      if (!key.startsWith('claps-')) {
         filteredMcpServers[key] = value;
       }
     }
@@ -133,7 +133,7 @@ export function RemoveSumomoMcpConfig(): void {
     }
 
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n');
-    console.log('🗑️ sumomo用のMCP設定を削除しました');
+    console.log('🗑️ claps用のMCP設定を削除しました');
   } catch (error) {
     console.error('MCP設定の削除に失敗:', error);
   }
@@ -144,8 +144,8 @@ export function RemoveSumomoMcpConfig(): void {
  */
 export function GetMcpConfigStatus(): {
   configExists: boolean;
-  sumomoGithub: boolean;
-  sumomoSlack: boolean;
+  clapsGithub: boolean;
+  clapsSlack: boolean;
   otherServers: readonly string[];
 } {
   const configPath = path.join(os.homedir(), '.claude.json');
@@ -153,8 +153,8 @@ export function GetMcpConfigStatus(): {
   if (!fs.existsSync(configPath)) {
     return {
       configExists: false,
-      sumomoGithub: false,
-      sumomoSlack: false,
+      clapsGithub: false,
+      clapsSlack: false,
       otherServers: [],
     };
   }
@@ -165,20 +165,20 @@ export function GetMcpConfigStatus(): {
     const mcpServers = config.mcpServers ?? {};
 
     const otherServers = Object.keys(mcpServers).filter(
-      (key) => !key.startsWith('sumomo-')
+      (key) => !key.startsWith('claps-')
     );
 
     return {
       configExists: true,
-      sumomoGithub: 'sumomo-github' in mcpServers,
-      sumomoSlack: 'sumomo-slack' in mcpServers,
+      clapsGithub: 'claps-github' in mcpServers,
+      clapsSlack: 'claps-slack' in mcpServers,
       otherServers,
     };
   } catch {
     return {
       configExists: true,
-      sumomoGithub: false,
-      sumomoSlack: false,
+      clapsGithub: false,
+      clapsSlack: false,
       otherServers: [],
     };
   }

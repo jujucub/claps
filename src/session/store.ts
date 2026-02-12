@@ -1,5 +1,5 @@
 /**
- * sumomo - セッションストア
+ * claps - セッションストア
  * Slackスレッド/GitHub IssueとClaudeセッションIDを管理する
  */
 

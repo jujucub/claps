@@ -1,5 +1,5 @@
 /**
- * sumomo - 設定管理
+ * claps - 設定管理
  */
 
 import * as dotenv from 'dotenv';
@@ -9,10 +9,10 @@ import * as path from 'path';
 import type { Config, AllowedUsers, ReflectionConfig } from './types/index.js';
 import { LoadAdminConfig, HasAdminConfig } from './admin/store.js';
 
-// ~/.sumomo/.env を優先的に読み込む（存在する場合）
-const sumomoEnvPath = path.join(os.homedir(), '.sumomo', '.env');
-if (fs.existsSync(sumomoEnvPath)) {
-  dotenv.config({ path: sumomoEnvPath });
+// ~/.claps/.env を優先的に読み込む（存在する場合）
+const clapsEnvPath = path.join(os.homedir(), '.claps', '.env');
+if (fs.existsSync(clapsEnvPath)) {
+  dotenv.config({ path: clapsEnvPath });
 } else {
   // プロジェクトルートの .env を読み込む
   dotenv.config();

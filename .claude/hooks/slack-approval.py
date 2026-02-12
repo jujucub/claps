@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-sumomo - Slack 承認 Hook スクリプト
+claps - Slack 承認 Hook スクリプト
 PreToolUse Hook として実行され、ツール使用の承認を制御する
 
 --dangerously-skip-permissions モードで動作:
 - 安全なツール（Read, Glob, Grep等）は即許可
-- mcp__sumomo-* ツールは即許可
+- mcp__claps-* ツールは即許可
 - その他のツールは承認サーバー経由でSlack承認を求める
 - 承認サーバー接続失敗時は deny（安全側）
 """
@@ -17,14 +17,14 @@ import urllib.request
 import urllib.error
 from pathlib import Path
 
-# sumomoタスクID（環境変数から取得、なければこのHookは無効）
-TASK_ID = os.environ.get('SUMOMO_TASK_ID', '')
+# clapsタスクID（環境変数から取得、なければこのHookは無効）
+TASK_ID = os.environ.get('CLAPS_TASK_ID', '')
 
 # 承認サーバーのURL
 APPROVAL_SERVER_URL = os.environ.get('APPROVAL_SERVER_URL', 'http://localhost:3001')
 
 # 認証トークンファイルのパス
-AUTH_TOKEN_FILE = Path.home() / '.sumomo' / 'auth-token'
+AUTH_TOKEN_FILE = Path.home() / '.claps' / 'auth-token'
 
 # 安全なツール（即許可）
 SAFE_TOOLS = {
@@ -55,7 +55,7 @@ def get_auth_token() -> str:
 def _debug_log(msg: str):
     """デバッグログを /tmp に書き出す"""
     import datetime
-    with open('/tmp/sumomo-hook-debug.log', 'a') as f:
+    with open('/tmp/claps-hook-debug.log', 'a') as f:
         f.write(f"{datetime.datetime.now()} {msg}\n")
 
 
@@ -63,7 +63,7 @@ def main():
     """メインエントリーポイント"""
     _debug_log(f"[START] TASK_ID='{TASK_ID}' APPROVAL_URL='{APPROVAL_SERVER_URL}'")
 
-    # sumomoタスクIDがなければ何もしない（ローカル開発時等）
+    # clapsタスクIDがなければ何もしない（ローカル開発時等）
     if not TASK_ID:
         _debug_log("[EXIT] No TASK_ID, exiting")
         exit(0)
@@ -88,8 +88,8 @@ def main():
         output_result("allow")
         return
 
-    # mcp__sumomo-* ツールは即許可
-    if tool_name.startswith('mcp__sumomo-'):
+    # mcp__claps-* ツールは即許可
+    if tool_name.startswith('mcp__claps-'):
         _debug_log(f"[ALLOW] MCP tool: {tool_name}")
         output_result("allow")
         return
@@ -119,7 +119,7 @@ def request_approval(tool_name: str, tool_input: dict) -> dict:
     # 認証トークンを取得
     auth_token = get_auth_token()
     if not auth_token:
-        raise Exception("Auth token not found. Is sumomo running?")
+        raise Exception("Auth token not found. Is claps running?")
 
     headers = {
         'Content-Type': 'application/json',

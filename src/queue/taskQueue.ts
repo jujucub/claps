@@ -1,5 +1,5 @@
 /**
- * sumomo - タスクキュー管理
+ * claps - タスクキュー管理
  * GitHub Issue と Slack からのタスクを管理するキューシステム
  */
 

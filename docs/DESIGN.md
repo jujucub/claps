@@ -1,4 +1,4 @@
-# sumomo - 設計書
+# claps - 設計書
 
 > GitHub Issue / Slack 連携 Claude 自動対応システム
 
@@ -6,7 +6,7 @@
 
 GitHub Issue や Slack メンションをトリガーに、ローカル環境の Claude CLI が自動でコード修正・PR作成を行うシステム。
 
-**名前の由来**: CLAMPの漫画「ちょびっツ」に登場するモバイルパソコン「すもも」から。小さいけど一生懸命働くイメージ。
+**名前の由来**: Claude Approval Persona Service の略。Slack承認付きClaude自動化サービス。
 
 ---
 
@@ -16,7 +16,7 @@ GitHub Issue や Slack メンションをトリガーに、ローカル環境の
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                              Slack                                      │
 │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────────┐ │
-│  │ @sumomo 指示    │  │ 承認モーダル    │  │ Issueスレッド           │ │
+│  │ @claps 指示    │  │ 承認モーダル    │  │ Issueスレッド           │ │
 │  │ 「このバグ直して」│  │ [許可] [拒否]   │  │ 進捗通知                │ │
 │  │                 │  │ + コメント入力  │  │                         │ │
 │  └────────┬────────┘  └────────┬────────┘  └────────────┬────────────┘ │
@@ -25,7 +25,7 @@ GitHub Issue や Slack メンションをトリガーに、ローカル環境の
             │ Socket Mode        │                        │
             ▼                    ▼                        ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│  ローカルPC - sumomo Bot                                                │
+│  ローカルPC - claps Bot                                                │
 │  ┌────────────────────────────────────────────────────────────────────┐│
 │  │                                                                    ││
 │  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────────┐ ││
@@ -52,7 +52,7 @@ GitHub Issue や Slack メンションをトリガーに、ローカル環境の
 │  │  Git worktree                                    │                ││
 │  │  ┌────────────────────────────────────────────┐  │                ││
 │  │  │ .worktrees/issue-{N}/                      │  │                ││
-│  │  │ ├── ブランチ: sumomo/issue-{N}             │  │                ││
+│  │  │ ├── ブランチ: claps/issue-{N}             │  │                ││
 │  │  │ └── 独立した作業ディレクトリ               │  │                ││
 │  │  └────────────────────────────────────────────┘  │                ││
 │  └──────────────────────────────────────────────────┼────────────────┘│
@@ -60,7 +60,7 @@ GitHub Issue や Slack メンションをトリガーに、ローカル環境の
 │  ┌──────────────────────────────────────────────────┼────────────────┐│
 │  │  tmux セッション                                 │                ││
 │  │  ┌────────────────────────────────────────────┐  │                ││
-│  │  │ セッション名: sumomo-{owner}-{repo}-{N}   │◀─┘                ││
+│  │  │ セッション名: claps-{owner}-{repo}-{N}   │◀─┘                ││
 │  │  │ ┌──────────────────────────────────────┐  │                   ││
 │  │  │ │ Claude CLI (対話モード)              │  │                   ││
 │  │  │ │ - ワークスペース信頼確認: 自動承認    │  │                   ││
@@ -73,7 +73,7 @@ GitHub Issue や Slack メンションをトリガーに、ローカル環境の
 │  │  PreToolUse Hook                                                  ││
 │  │  ┌──────────────────────────────────────────────────────────────┐ ││
 │  │  │ Edit/Write/Bash → slack-approval.py                          │ ││
-│  │  │ - SUMOMO_TMUX_SESSION が設定されている場合のみ承認フロー      │ ││
+│  │  │ - CLAPS_TMUX_SESSION が設定されている場合のみ承認フロー      │ ││
 │  │  │ - Slack承認 → tmux send-keys で Claude に応答                │ ││
 │  │  └──────────────────────────────────────────────────────────────┘ ││
 │  └───────────────────────────────────────────────────────────────────┘│
@@ -95,10 +95,10 @@ GitHub Issue や Slack メンションをトリガーに、ローカル環境の
 
 | 機能 | トリガー | 動作 |
 |------|---------|------|
-| **Issue自動対応** | GitHub Issue に `[sumomo]` タグ | worktreeで作業、コード修正、PR作成 |
-| **Slack指示** | Slack で `@sumomo` | 指示に従ってタスク実行 |
+| **Issue自動対応** | GitHub Issue に `[claps]` タグ | worktreeで作業、コード修正、PR作成 |
+| **Slack指示** | Slack で `@claps` | 指示に従ってタスク実行 |
 | **実行承認** | 危険なコマンド実行時 | Slackモーダルで許可/拒否（コメント可） |
-| **質問回答** | sumomoが判断を求める時 | Slackで選択肢または自由入力 |
+| **質問回答** | clapsが判断を求める時 | Slackで選択肢または自由入力 |
 | **進捗通知** | 処理開始・完了時 | Slackスレッドで状況報告 |
 
 ---
@@ -110,7 +110,7 @@ GitHub Issue や Slack メンションをトリガーに、ローカル環境の
 ```
 src/
 ├── index.ts           # エントリーポイント、タスク処理
-├── config.ts          # 設定読み込み（~/.sumomo/.env優先）
+├── config.ts          # 設定読み込み（~/.claps/.env優先）
 ├── types/
 │   └── index.ts       # 型定義
 ├── slack/
@@ -176,7 +176,7 @@ IsClaudeFinished(output)
 ```typescript
 // worktree作成
 CreateWorktree(repoPath, owner, repo, issueNumber)
-// → .worktrees/issue-{N}/ に sumomo/issue-{N} ブランチで作成
+// → .worktrees/issue-{N}/ に claps/issue-{N} ブランチで作成
 
 // コミット＆プッシュ
 CommitAndPush(worktreeInfo, message)
@@ -214,9 +214,9 @@ Claude CLI がツール実行
        ▼
 PreToolUse Hook 起動
        │
-       ├─ SUMOMO_TMUX_SESSION 未設定 → 自動許可（通常のClaude使用）
+       ├─ CLAPS_TMUX_SESSION 未設定 → 自動許可（通常のClaude使用）
        │
-       └─ SUMOMO_TMUX_SESSION 設定済み
+       └─ CLAPS_TMUX_SESSION 設定済み
               │
               ▼
        承認サーバーに問い合わせ
@@ -248,9 +248,9 @@ tmux send-keys   tmux send-keys
 
 ```
 1. GitHub Issue 作成
-   └─ タイトルまたは本文に [sumomo] を含む
+   └─ タイトルまたは本文に [claps] を含む
 
-2. sumomo Bot が検知 (5分間隔ポーリング)
+2. claps Bot が検知 (5分間隔ポーリング)
 
 3. Slack にスレッド作成
    └─ 「🍑 GitHub Issue 処理開始」
@@ -258,7 +258,7 @@ tmux send-keys   tmux send-keys
 
 4. worktree 作成
    └─ .worktrees/issue-{N}/ ディレクトリ
-   └─ sumomo/issue-{N} ブランチ
+   └─ claps/issue-{N} ブランチ
 
 5. tmux セッション作成
    └─ Claude CLI を対話モードで起動
@@ -288,7 +288,7 @@ tmux send-keys   tmux send-keys
 ### Slack 指示フロー
 
 ```
-1. Slack で @sumomo メンション
+1. Slack で @claps メンション
    └─ 「LoginService.cs のバグを直して」
 
 2. スレッドで処理開始通知
@@ -315,7 +315,7 @@ tmux send-keys   tmux send-keys
 | Write | すべて | ファイル作成 |
 | Edit | すべて | ファイル編集 |
 
-※ sumomo のtmuxセッション内でのみ承認フローが発動
+※ claps のtmuxセッション内でのみ承認フローが発動
 
 ---
 
@@ -349,7 +349,7 @@ tmux send-keys   tmux send-keys
 
 | 項目 | 設定値 |
 |------|--------|
-| App Name | sumomo |
+| App Name | claps |
 | Socket Mode | ON |
 | Event Subscriptions | `app_mention`, `message.channels` |
 | Interactivity & Shortcuts | ON |
@@ -365,7 +365,7 @@ tmux send-keys   tmux send-keys
 ## ディレクトリ構成
 
 ```
-sumomo/
+claps/
 ├── docs/
 │   ├── DESIGN.md              # 本設計書
 │   ├── CONTRIB.md             # 開発者ガイド
@@ -409,7 +409,7 @@ sumomo/
 │   ├── settings.json          # Claude設定
 │   └── hooks/
 │       └── slack-approval.py  # 承認スクリプト
-├── ~/.sumomo/                 # ユーザー設定ディレクトリ
+├── ~/.claps/                 # ユーザー設定ディレクトリ
 │   ├── .env                   # 環境変数（優先読み込み）
 │   ├── admin-config.json      # 管理設定
 │   └── repos/                 # クローンしたリポジトリ
@@ -429,8 +429,8 @@ sumomo/
 npm install
 
 # 2. 環境変数設定（.envファイル推奨）
-cp .env.example ~/.sumomo/.env
-# ~/.sumomo/.env を編集
+cp .env.example ~/.claps/.env
+# ~/.claps/.env を編集
 
 # または環境変数を直接設定
 export SLACK_BOT_TOKEN="xoxb-..."
@@ -451,7 +451,7 @@ npm start
 
 ### 環境変数の読み込み優先順位
 
-1. `~/.sumomo/.env` （存在する場合）
+1. `~/.claps/.env` （存在する場合）
 2. プロジェクトルートの `.env`
 
 ### 管理画面
@@ -489,7 +489,7 @@ http://localhost:3002/
 
 ```
 └─ 🍑 worktree を作成中...
-└─ 🍑 ブランチ `sumomo/issue-42` で作業を開始します
+└─ 🍑 ブランチ `claps/issue-42` で作業を開始します
 └─ 🍑 Claude を起動中...
 └─ 🍑 ```
    // コード修正中の出力...
@@ -532,7 +532,7 @@ http://localhost:3002/
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ 🍑 sumomo からの質問                                        │
+│ 🍑 claps からの質問                                        │
 │                                                             │
 │ 認証方式について確認させてください。                        │
 │ 現在JWT認証を使用していますが、セッション認証に             │

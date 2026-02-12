@@ -1,6 +1,6 @@
 # Contributing Guide (開発者ガイド)
 
-> sumomo 開発に参加するための手順書
+> claps 開発に参加するための手順書
 
 ## 目次
 
@@ -31,8 +31,8 @@
 
 ```bash
 # 1. リポジトリをクローン
-git clone https://github.com/jujucub/sumomo.git
-cd sumomo
+git clone https://github.com/jujucub/claps.git
+cd claps
 
 # 2. 依存関係をインストール
 npm install
@@ -104,7 +104,7 @@ tsx watch src/index.ts
 
 ### 環境変数の読み込み優先順位
 
-1. `~/.sumomo/.env` （存在する場合）
+1. `~/.claps/.env` （存在する場合）
 2. プロジェクトルートの `.env`
 
 ---
@@ -112,7 +112,7 @@ tsx watch src/index.ts
 ## プロジェクト構成
 
 ```
-sumomo/
+claps/
 ├── src/                        # ソースコード
 │   ├── index.ts                # メインエントリーポイント
 │   ├── config.ts               # 設定読み込み
@@ -170,12 +170,12 @@ sumomo/
 ```
 main ─────────────────────────────────
   └─ feature/xxx ─────────────────────
-       └─ sumomo/issue-{N} ──────────
+       └─ claps/issue-{N} ──────────
 ```
 
 - `main`: 本番ブランチ
 - `feature/*`: 機能開発ブランチ
-- `sumomo/issue-{N}`: sumomoが自動作成するブランチ
+- `claps/issue-{N}`: clapsが自動作成するブランチ
 
 ### 2. コミットメッセージ規約
 
@@ -213,10 +213,10 @@ main ─────────────────────────
 npm run dev
 
 # 2. Slackでテスト
-# @sumomo テストメッセージ
+# @claps テストメッセージ
 
 # 3. GitHub Issueでテスト
-# [sumomo] テストIssue を作成
+# [claps] テストIssue を作成
 ```
 
 ### 型チェック

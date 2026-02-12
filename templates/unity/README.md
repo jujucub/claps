@@ -1,6 +1,6 @@
 # Unity プロジェクト用テンプレート
 
-sumomoでUnityプロジェクトのIssue対応を行うための設定テンプレートです。
+clapsでUnityプロジェクトのIssue対応を行うための設定テンプレートです。
 
 ## 含まれるファイル
 
@@ -40,7 +40,7 @@ Unity Editorで対象プロジェクトを開き、以下の手順でMCPパッ�
 
 ## 使い方
 
-sumomoがIssue対応時に以下のSkillを使用できます。
+clapsがIssue対応時に以下のSkillを使用できます。
 
 ```
 /unity-implement プレイヤーのHPバーを追加して
@@ -87,4 +87,4 @@ Skillに含まれる規約:
 ## 関連リンク
 
 - [Unity MCP (CoplayDev)](https://github.com/CoplayDev/unity-mcp)
-- [sumomo](https://github.com/jujucub/sumomo)
+- [claps](https://github.com/jujucub/claps)

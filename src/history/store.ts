@@ -1,5 +1,5 @@
 /**
- * sumomo - 作業履歴ストア
+ * claps - 作業履歴ストア
  * JSONL形式で作業履歴を永続化する
  */
 
@@ -9,7 +9,7 @@ import os from 'os';
 import type { WorkHistoryRecord } from '../types/index.js';
 
 // 履歴保存ディレクトリ
-const HISTORY_BASE_DIR = path.join(os.homedir(), '.sumomo', 'history');
+const HISTORY_BASE_DIR = path.join(os.homedir(), '.claps', 'history');
 
 /**
  * 日付文字列（YYYY-MM-DD）を取得する

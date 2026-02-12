@@ -1,5 +1,5 @@
 /**
- * sumomo - 内省結果ストア
+ * claps - 内省結果ストア
  * 内省結果と提案の状態を永続化する
  */
 
@@ -9,7 +9,7 @@ import os from 'os';
 import type { ReflectionResult, TaskSuggestion } from '../types/index.js';
 
 // 保存ディレクトリ
-const REFLECTIONS_DIR = path.join(os.homedir(), '.sumomo', 'reflections');
+const REFLECTIONS_DIR = path.join(os.homedir(), '.claps', 'reflections');
 
 /**
  * 内省結果ストアクラス

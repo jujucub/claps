@@ -1,6 +1,6 @@
 # Android テスト用テンプレート
 
-sumomoでAndroid端末へのAPKインストール・テストを行うための設定テンプレートです。
+clapsでAndroid端末へのAPKインストール・テストを行うための設定テンプレートです。
 
 ## 含まれるファイル
 
@@ -111,4 +111,4 @@ adb -s DEVICE_SERIAL install app.apk
 ## 関連リンク
 
 - [Android Debug Bridge (adb)](https://developer.android.com/tools/adb)
-- [sumomo](https://github.com/jujucub/sumomo)
+- [claps](https://github.com/jujucub/claps)

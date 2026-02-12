@@ -1,13 +1,13 @@
-# sumomo 🍑
+# CLAPS 👏
 
-GitHub Issue / Slack 連携 Claude 自動対応システム
+Claude Approval Persona Service - Slack承認付きClaude自動化サービス
 
 ## これは何？
 
-`[sumomo]` タグを付けるだけで、Claude が自動でコード修正・PR作成を行うBotです。
+`[claps]` タグを付けるだけで、Claude が自動でコード修正・PR作成を行うBotです。
 
-- **GitHub Issue** に `[sumomo]` タグ → Issue を分析してコード修正、PR作成
-- **Slack** で `@sumomo` → 指示に従ってタスク実行
+- **GitHub Issue** に `[claps]` タグ → Issue を分析してコード修正、PR作成
+- **Slack** で `@claps` → 指示に従ってタスク実行
 - **危険な操作** → Slack モーダルで承認を求める（コメント入力可）
 - **判断が必要な時** → Slack で質問してくる
 
@@ -21,12 +21,7 @@ GitHub Issue / Slack 連携 Claude 自動対応システム
 | **Slackスレッド** | Issue処理の進捗をスレッドでリアルタイム通知 |
 | **モーダル承認** | 許可/拒否時にコメント入力可能 |
 | **セッション継続** | 同じスレッド/Issueでの会話を継続可能 |
-| **Slackコマンド管理** | `/sumomo` コマンドでホワイトリスト・リポジトリ・ユーザーマッピングを管理 |
-
-## 名前の由来
-
-CLAMPの漫画「ちょびっツ」に登場するモバイルパソコン「すもも」から。
-小さいけど一生懸命働くイメージ。
+| **Slackコマンド管理** | `/claps` コマンドでホワイトリスト・リポジトリ・ユーザーマッピングを管理 |
 
 ## クイックスタート
 
@@ -83,13 +78,13 @@ npm start
 ### GitHub Issue から自動対応
 
 1. Issue を作成
-2. タイトルまたは本文に `[sumomo]` を含める
-3. sumomo が自動検知して処理開始
+2. タイトルまたは本文に `[claps]` を含める
+3. claps が自動検知して処理開始
 4. 完了後、PRが自動作成される
 
 ```markdown
 # Issue タイトル例
-[sumomo] ログイン画面のバグを修正
+[claps] ログイン画面のバグを修正
 
 # Issue 本文例
 ログインボタンが反応しない問題を修正してください。
@@ -98,28 +93,28 @@ npm start
 ### Slack から指示
 
 ```
-@sumomo このファイルのテストを書いて
+@claps このファイルのテストを書いて
 ```
 
 ### Slack コマンドで管理
 
 ```
-/sumomo help                              → ヘルプ表示
-/sumomo repos                             → 監視リポジトリ一覧
-/sumomo owner/repo メッセージ              → 指定リポジトリでClaude実行
+/claps help                              → ヘルプ表示
+/claps repos                             → 監視リポジトリ一覧
+/claps owner/repo メッセージ              → 指定リポジトリでClaude実行
 ```
 
 **管理者コマンド（`ADMIN_SLACK_USER` で指定されたユーザーのみ）:**
 
 ```
-/sumomo add-repo owner/repo               → 監視リポジトリ追加
-/sumomo remove-repo owner/repo            → 監視リポジトリ削除
-/sumomo whitelist                         → ホワイトリスト表示（マッピング含む）
-/sumomo whitelist add @user               → Slackユーザーをホワイトリストに追加
-/sumomo whitelist add @user github-name   → Slack + GitHub + マッピングを同時登録
-/sumomo whitelist add-github username     → GitHubユーザーのみ追加
-/sumomo whitelist remove @user            → Slackユーザー削除（関連マッピングも削除）
-/sumomo whitelist remove-github username  → GitHubユーザー削除（関連マッピングも削除）
+/claps add-repo owner/repo               → 監視リポジトリ追加
+/claps remove-repo owner/repo            → 監視リポジトリ削除
+/claps whitelist                         → ホワイトリスト表示（マッピング含む）
+/claps whitelist add @user               → Slackユーザーをホワイトリストに追加
+/claps whitelist add @user github-name   → Slack + GitHub + マッピングを同時登録
+/claps whitelist add-github username     → GitHubユーザーのみ追加
+/claps whitelist remove @user            → Slackユーザー削除（関連マッピングも削除）
+/claps whitelist remove-github username  → GitHubユーザー削除（関連マッピングも削除）
 ```
 
 ## 利用可能なスクリプト

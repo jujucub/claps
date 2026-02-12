@@ -1,5 +1,5 @@
 /**
- * sumomo - Slack Bot
+ * claps - Slack Bot
  * Socket Mode で動作する Slack Bot
  */
 

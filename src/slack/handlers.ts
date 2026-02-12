@@ -1,5 +1,5 @@
 /**
- * sumomo - Slack イベントハンドラー
+ * claps - Slack イベントハンドラー
  * メンション、ボタンクリック、モーダル、メッセージの処理
  */
 
@@ -251,8 +251,8 @@ export function RegisterSlackHandlers(
   // ホワイトリストを保存
   _allowedUsers = allowedUsers;
 
-  // /sumomo スラッシュコマンドの処理
-  app.command('/sumomo', async ({ command, ack, respond }) => {
+  // /claps スラッシュコマンドの処理
+  app.command('/claps', async ({ command, ack, respond }) => {
     await ack();
 
     const userId = command.user_id;
@@ -277,56 +277,56 @@ export function RegisterSlackHandlers(
       let helpText = `${Msg('command.helpTitle')}
 
 *基本コマンド:*
-\`/sumomo owner/repo メッセージ\`
+\`/claps owner/repo メッセージ\`
 → 指定したリポジトリの環境でClaudeを実行
 
-\`/sumomo repos\`
+\`/claps repos\`
 → 監視対象リポジトリの一覧を表示
 
 *例:*
-\`/sumomo h-sato/my-project バグを修正して\``;
+\`/claps h-sato/my-project バグを修正して\``;
 
       helpText += `
 
 *内省コマンド:*
-\`/sumomo reflection\`
+\`/claps reflection\`
 → 内省機能のステータス表示`;
 
       if (isAdmin) {
         helpText += `
 
 *管理者コマンド:*
-\`/sumomo add-repo owner/repo\`
+\`/claps add-repo owner/repo\`
 → 監視リポジトリを追加
 
-\`/sumomo remove-repo owner/repo\`
+\`/claps remove-repo owner/repo\`
 → 監視リポジトリを削除
 
-\`/sumomo reflection run\`
+\`/claps reflection run\`
 → 内省を手動実行
 
-\`/sumomo reflection enable\`
+\`/claps reflection enable\`
 → 内省機能を有効化
 
-\`/sumomo reflection disable\`
+\`/claps reflection disable\`
 → 内省機能を無効化
 
-\`/sumomo reflection schedule HH:MM\`
+\`/claps reflection schedule HH:MM\`
 → 内省の実行時刻を変更
 
-\`/sumomo whitelist\`
+\`/claps whitelist\`
 → ホワイトリストを表示（マッピング情報含む）
 
-\`/sumomo whitelist add @user [github-username]\`
+\`/claps whitelist add @user [github-username]\`
 → ユーザーをホワイトリストに追加（GitHub名を指定するとマッピングも同時作成）
 
-\`/sumomo whitelist add-github username\`
+\`/claps whitelist add-github username\`
 → GitHubユーザーのみをホワイトリストに追加
 
-\`/sumomo whitelist remove @user\`
+\`/claps whitelist remove @user\`
 → Slackユーザーをホワイトリストから削除
 
-\`/sumomo whitelist remove-github username\`
+\`/claps whitelist remove-github username\`
 → GitHubユーザーをホワイトリストから削除`;
       }
 
@@ -852,7 +852,7 @@ export function RegisterSlackHandlers(
     });
   });
 
-  // @sumomo メンションの処理
+  // @claps メンションの処理
   app.event('app_mention', async ({ event, say }) => {
     const text = event.text;
     const userId = event.user ?? 'unknown';
@@ -868,7 +868,7 @@ export function RegisterSlackHandlers(
       return;
     }
 
-    // @sumomo を除いた指示テキスト
+    // @claps を除いた指示テキスト
     const prompt = text.replace(/<@[A-Z0-9]+>/g, '').trim();
 
     if (!prompt) {

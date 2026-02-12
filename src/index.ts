@@ -1,5 +1,5 @@
 /**
- * sumomo - メインエントリーポイント
+ * claps - メインエントリーポイント
  * GitHub Issue / Slack 連携 Claude 自動対応システム
  */
 
@@ -907,7 +907,7 @@ async function Main(): Promise<void> {
       });
     }
   } catch (error) {
-    console.error('Failed to start sumomo:', error);
+    console.error('Failed to start claps:', error);
     process.exit(1);
   }
 }

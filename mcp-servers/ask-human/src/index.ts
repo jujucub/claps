@@ -27,7 +27,7 @@ const APPROVAL_SERVER_URL =
   process.env['APPROVAL_SERVER_URL'] ?? 'http://127.0.0.1:3001';
 
 // 認証トークンファイル
-const AUTH_TOKEN_FILE = path.join(os.homedir(), '.sumomo', 'auth-token');
+const AUTH_TOKEN_FILE = path.join(os.homedir(), '.claps', 'auth-token');
 
 /**
  * 認証トークンをファイルから読み取る
@@ -163,7 +163,7 @@ async function AskHuman(
   // 認証トークンを読み取る
   const authToken = ReadAuthToken();
   if (!authToken) {
-    throw new Error('Auth token not found - is sumomo running?');
+    throw new Error('Auth token not found - is claps running?');
   }
 
   const requestBody = {

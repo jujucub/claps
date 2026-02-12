@@ -1,5 +1,5 @@
 /**
- * sumomo - 承認サーバー
+ * claps - 承認サーバー
  * PreToolUse Hook からの承認リクエストを処理する Express サーバー
  */
 
@@ -20,7 +20,7 @@ let _app: Express | undefined;
 
 // 認証トークン
 let _authToken: string | undefined;
-const AUTH_TOKEN_DIR = path.join(os.homedir(), '.sumomo');
+const AUTH_TOKEN_DIR = path.join(os.homedir(), '.claps');
 const AUTH_TOKEN_FILE = path.join(AUTH_TOKEN_DIR, 'auth-token');
 
 // Slack Bot への参照（承認リクエスト送信用）
