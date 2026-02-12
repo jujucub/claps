@@ -129,7 +129,11 @@ The examples below use the default `botName` of `claps`. If you change `botName`
 
 ### Character Persona
 
-Create `~/.claps/character.md` to define a custom character prompt for Claude responses. If not present, the default persona is used.
+Create `~/.claps/character.md` to define a custom character prompt for Claude responses. If not present, the default persona (Claris) is used.
+
+Sample character configurations are available in the `characters/` directory:
+- `characters/sumomo.md` - Sumomo character (for character.md)
+- `characters/sumomo-messages.json` - Sumomo character messages (for messages.json)
 
 ### Message Templates
 
@@ -150,10 +154,10 @@ Create `~/.claps/messages.json` to customize bot messages:
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `emoji` | `🍑` | Emoji used in console and Slack messages |
-| `slackEmoji` | `:peach:` | Slack-specific emoji code |
-| `name` | `すもも` | Display name for the character |
-| `botName` | `claps` | Used for slash command (`/botName`), mention (`@botName`), GitHub Issue tag (`[botName]`), and git branch prefix (`botName/issue-123`) |
+| `emoji` | `☕` | Emoji used in console and Slack messages |
+| `slackEmoji` | `:coffee:` | Slack-specific emoji code |
+| `name` | `クラリス` | Display name for the character |
+| `botName` | `claris` | Used for slash command (`/botName`), mention (`@botName`), GitHub Issue tag (`[botName]`), and git branch prefix (`botName/issue-123`) |
 | `messages` | `{}` | Message template overrides |
 
 **Important:** When changing `botName`, also update the corresponding slash command name and bot display name in your Slack App settings.

@@ -129,7 +129,11 @@ npm start
 
 ### キャラクタペルソナ
 
-`~/.claps/character.md` を作成すると、Claudeの応答に使用するキャラクタプロンプトをカスタマイズできます。ファイルが存在しない場合はデフォルトのペルソナが使用されます。
+`~/.claps/character.md` を作成すると、Claudeの応答に使用するキャラクタプロンプトをカスタマイズできます。ファイルが存在しない場合はデフォルトのペルソナ（クラリス）が使用されます。
+
+`characters/` ディレクトリにサンプルのキャラクタ設定が用意されています:
+- `characters/sumomo.md` - すももキャラクタ（character.md用）
+- `characters/sumomo-messages.json` - すももキャラクタ用メッセージ（messages.json用）
 
 ### メッセージテンプレート
 
@@ -150,10 +154,10 @@ npm start
 
 | フィールド | デフォルト | 説明 |
 |-----------|-----------|------|
-| `emoji` | `🍑` | コンソールやSlackメッセージに使用される絵文字 |
-| `slackEmoji` | `:peach:` | Slack専用の絵文字コード |
-| `name` | `すもも` | キャラクタの表示名 |
-| `botName` | `claps` | スラッシュコマンド名（`/botName`）、メンション名（`@botName`）、GitHub Issueタグ（`[botName]`）、Gitブランチプレフィックス（`botName/issue-123`）に使用 |
+| `emoji` | `☕` | コンソールやSlackメッセージに使用される絵文字 |
+| `slackEmoji` | `:coffee:` | Slack専用の絵文字コード |
+| `name` | `クラリス` | キャラクタの表示名 |
+| `botName` | `claris` | スラッシュコマンド名（`/botName`）、メンション名（`@botName`）、GitHub Issueタグ（`[botName]`）、Gitブランチプレフィックス（`botName/issue-123`）に使用 |
 | `messages` | `{}` | メッセージテンプレートのオーバーライド |
 
 **重要:** `botName` を変更する場合は、Slack App の設定でも対応するスラッシュコマンド名とボット表示名を変更してください。

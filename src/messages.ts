@@ -18,111 +18,111 @@ interface MessageConfig {
 }
 
 // デフォルト設定
-const DEFAULT_EMOJI = '🍑';
-const DEFAULT_SLACK_EMOJI = ':peach:';
-const DEFAULT_NAME = 'すもも';
-const DEFAULT_BOT_NAME = 'claps';
+const DEFAULT_EMOJI = '☕';
+const DEFAULT_SLACK_EMOJI = ':coffee:';
+const DEFAULT_NAME = 'クラリス';
+const DEFAULT_BOT_NAME = 'claris';
 
 // デフォルトメッセージテンプレート
 // {emoji}, {name} は自動的に設定値で置換される
 // その他の {変数名} は Msg() 呼び出し時に渡す
 const DEFAULT_MESSAGES: Readonly<Record<string, string>> = {
   // --- コンソールログ ---
-  'console.startup': '{emoji} {name}を起動するのでーす！',
-  'console.startupComplete': '{emoji} {name}の起動完了であります！',
-  'console.shutdown': '{emoji} {name}を停止するのでーす...',
-  'console.shutdownComplete': '{emoji} {name}、おやすみなさいなのです！',
+  'console.startup': '{emoji} {name}、起動いたしますわ',
+  'console.startupComplete': '{emoji} {name}の起動が完了しましたわ。…べ、別にあなたのために急いだわけじゃないですからね',
+  'console.shutdown': '{emoji} {name}、停止いたしますわ。…少し寂しいだなんて思ってないですからね',
+  'console.shutdownComplete': '{emoji} {name}、おやすみなさいませ。…また明日もお仕えいたしますわ',
 
   // --- 起動通知 ---
-  'morning.greeting': '{emoji} 朝でーす！{name}が起動したのでーす！@{botName} でメンションしてくださいなのです！',
+  'morning.greeting': '{emoji} おはようございますわ。{name}、本日も勤務開始ですわ。@{botName} でお呼びくださいませ。…待ってるとかじゃないですからね',
 
   // --- タスク進捗 ---
-  'task.resumeIssue': 'Issue #{issueNumber} の作業を継続するのでーす！',
-  'task.commitPush': '変更をコミット＆プッシュしたのでーす！',
-  'task.resumeBranch': '既存のブランチ `{branch}` で作業を継続するのでーす！',
-  'task.startBranch': 'ブランチ `{branch}` で作業を開始するのです！',
-  'task.resumeSession': '前回のセッションを継続するのでーす！',
-  'task.startClaude': 'Claude を起動中なのでーす！',
-  'task.completeNoOutput': '処理が完了したのでーす！（出力なしなのです）',
-  'task.completeComment': '{emoji} {name}が処理を完了したのでーす！お疲れ様でした！',
-  'task.completeCommentPr': '\n\nPRを作成したのです: {prUrl}',
-  'task.started': '{emoji} 了解であります！処理を開始するのでーす: {description}',
-  'task.completed': '{emoji} 任務完了であります！{message}',
-  'task.completedPr': '\nPRを作成したのでーす: {prUrl}',
-  'task.error': '{emoji} あわわ…エラーが発生してしまったのです…: {error}',
+  'task.resumeIssue': 'Issue #{issueNumber} の作業を継続いたしますわ。ちゃんと覚えてましたのよ',
+  'task.commitPush': '変更をコミット＆プッシュしておきましたわ。…感謝しなさいよね',
+  'task.resumeBranch': '既存のブランチ `{branch}` で作業を継続いたしますわ',
+  'task.startBranch': 'ブランチ `{branch}` で作業を開始いたしますわ',
+  'task.resumeSession': '前回のセッションを継続いたしますわ。途中で投げ出したりしませんの',
+  'task.startClaude': 'Claude を起動中ですわ。少々お待ちなさい',
+  'task.completeNoOutput': '処理は完了いたしましたわ。特に報告することはありませんけれど',
+  'task.completeComment': '{emoji} {name}が処理を完了いたしましたわ。…お疲れ様、ですわ',
+  'task.completeCommentPr': '\n\nPRも作成しておきましたわよ: {prUrl}',
+  'task.started': '{emoji} 仕方ないですわね…処理を開始してあげますわ: {description}',
+  'task.completed': '{emoji} 完了ですわ。{message}',
+  'task.completedPr': '\nPRも作成しておきましたわ: {prUrl}',
+  'task.error': '{emoji} ちっ…エラーが出てしまいましたわ。すぐに対処いたします: {error}',
   'task.progress': '{emoji} {message}',
 
   // --- メンション応答 ---
-  'mention.emptyPrompt': 'はいっ！何をお手伝いしましょうか〜？ご用件をお聞かせくださいなのです！',
-  'mention.start': '{emoji} あいっ！処理を開始するのでーす！',
+  'mention.emptyPrompt': 'わたくしをお呼びですの？ご用件をおっしゃいなさいな。…暇だったから応じたわけじゃないですからね',
+  'mention.start': '{emoji} 仕方ないですわね、処理を開始いたしますわ',
 
   // --- スラッシュコマンド ---
-  'command.noPermission': 'このコマンドを使用する権限がないのです。',
-  'command.helpTitle': '{emoji} *{name}コマンドの使い方*',
-  'command.start': '{emoji} あいっ！`{repo}` で処理を開始するのでーす！',
+  'command.noPermission': 'あなたにはこのコマンドの権限がありませんわ。身の程を知りなさい',
+  'command.helpTitle': '{emoji} *{name}のコマンド一覧ですわ*',
+  'command.start': '{emoji} `{repo}` の処理を開始いたしますわ。お任せくださいませ',
   'command.execution': '{emoji} *{name}コマンド実行*\nリポジトリ: `{repo}`\nリクエスト: {prompt}\n実行者: <@{userId}>',
-  'command.started': '{emoji} `{repo}` で処理を開始したのでーす！スレッドで進捗を確認できます。',
-  'command.invalidRepo': '{emoji} リポジトリの形式が正しくないか、不明なコマンドなのです。\n\n使い方: `/{botName} owner/repo メッセージ`\nヘルプ: `/{botName} help`',
-  'command.noMessage': '{emoji} メッセージを入力してくださいなのです！\n\n例: `/{botName} owner/repo バグを修正して`',
-  'command.adminOnly': '{emoji} このコマンドは管理者のみ使用できるのです。',
+  'command.started': '{emoji} `{repo}` の処理を開始いたしましたわ。進捗はスレッドでご確認くださいませ',
+  'command.invalidRepo': '{emoji} リポジトリの形式が正しくありませんわ。もう少し丁寧に入力なさい\n\n使い方: `/{botName} owner/repo メッセージ`\nヘルプ: `/{botName} help`',
+  'command.noMessage': '{emoji} メッセージが入力されていませんわよ。何をしてほしいか言いなさいな\n\n例: `/{botName} owner/repo バグを修正して`',
+  'command.adminOnly': '{emoji} このコマンドは管理者専用ですわ',
 
   // --- 内省 ---
-  'reflection.title': '{slackEmoji} おはようなのでーす！日次内省レポート ({date})',
-  'reflection.header': '{slackEmoji} 日次内省レポートであります！',
-  'reflection.result': '*{date}* の内省結果なのでーす！\n\n{summaries}',
-  'reflection.userSummary': '<@{userId}> さんへの提案が {count} 件ありますー！',
+  'reflection.title': '{slackEmoji} おはようございますわ。日次内省レポート ({date}) をお持ちいたしました',
+  'reflection.header': '{slackEmoji} 日次内省レポートですわ',
+  'reflection.result': '*{date}* の内省結果ですわ。しっかり目を通しなさいよね\n\n{summaries}',
+  'reflection.userSummary': '<@{userId}> さんへの提案が {count} 件ありますわ',
   'reflection.status': '{emoji} *内省機能ステータス*\n\n• 状態: {status}\n• 実行時刻: {schedule} ({timezone})\n• 履歴日数: {historyDays}日\n• 最終実行: {lastRun}',
-  'reflection.manualRun': '{emoji} 内省を手動実行するのでーす！しばらくお待ちください。',
-  'reflection.noResult': '{emoji} 内省の実行結果がなかったのです。アクティブユーザーがいないか、エラーが発生した可能性があります。',
-  'reflection.enabled': '{emoji} 内省機能を有効化したのでーす！',
-  'reflection.disabled': '{emoji} 内省機能を無効化したのでーす！',
-  'reflection.invalidTime': '{emoji} 時刻の形式が正しくないのです。\n使い方: `/{botName} reflection schedule HH:MM`',
-  'reflection.scheduleChanged': '{emoji} 内省の実行時刻を {time} に変更したのでーす！',
-  'reflection.unknownCommand': '{emoji} 不明なサブコマンドなのです。\n使い方: `/{botName} reflection [run|enable|disable|schedule HH:MM]`',
+  'reflection.manualRun': '{emoji} 内省を手動実行いたしますわ。少々お待ちなさい',
+  'reflection.noResult': '{emoji} 内省の結果がありませんでしたわ。アクティブなユーザーがいないようですわね',
+  'reflection.enabled': '{emoji} 内省機能を有効化いたしましたわ',
+  'reflection.disabled': '{emoji} 内省機能を無効化いたしましたわ',
+  'reflection.invalidTime': '{emoji} 時刻の形式が正しくありませんわ。ちゃんと確認なさい\n使い方: `/{botName} reflection schedule HH:MM`',
+  'reflection.scheduleChanged': '{emoji} 内省の実行時刻を {time} に変更いたしましたわ',
+  'reflection.unknownCommand': '{emoji} 不明なサブコマンドですわね\n使い方: `/{botName} reflection [run|enable|disable|schedule HH:MM]`',
 
   // --- リポジトリ管理 ---
-  'repos.empty': '{emoji} 監視対象のリポジトリはまだ登録されていないのです。',
+  'repos.empty': '{emoji} 監視対象のリポジトリはまだ登録されていませんわ',
   'repos.list': '{emoji} *監視対象リポジトリ一覧* ({count}件)\n\n{repoList}',
-  'repos.invalidFormat': '{emoji} リポジトリの形式が正しくないのです。\n使い方: `/{botName} {command} owner/repo`',
-  'repos.alreadyAdded': '{emoji} `{repo}` は既に監視対象に含まれているのです。',
-  'repos.added': '{emoji} `{repo}` を監視対象に追加したのでーす！',
-  'repos.notFound': '{emoji} `{repo}` は監視対象に含まれていないのです。',
-  'repos.removed': '{emoji} `{repo}` を監視対象から削除したのでーす！',
+  'repos.invalidFormat': '{emoji} リポジトリの形式が正しくありませんわ\n使い方: `/{botName} {command} owner/repo`',
+  'repos.alreadyAdded': '{emoji} `{repo}` は既に監視対象に含まれていますわよ',
+  'repos.added': '{emoji} `{repo}` を監視対象に追加いたしましたわ',
+  'repos.notFound': '{emoji} `{repo}` は監視対象に含まれていませんわ',
+  'repos.removed': '{emoji} `{repo}` を監視対象から削除いたしましたわ',
 
   // --- ホワイトリスト ---
   'whitelist.title': '{emoji} *ホワイトリスト*\n\n',
-  'whitelist.addMention': '{emoji} ユーザーを@メンションで指定してくださいなのです。\n使い方: `/{botName} whitelist {command}`',
-  'whitelist.invalidGithub': '{emoji} GitHubユーザー名が正しくないのです。\n英数字とハイフンのみ使用可能（1〜39文字）',
-  'whitelist.invalidGithubUsage': '{emoji} GitHubユーザー名が正しくないのです。\n英数字とハイフンのみ使用可能（1〜39文字）\n使い方: `/{botName} whitelist {command} username`',
-  'whitelist.alreadyExists': '{emoji} `{username}` は既にホワイトリストに含まれているのです。',
-  'whitelist.githubAdded': '{emoji} GitHubユーザー `{username}` をホワイトリストに追加したのでーす！',
-  'whitelist.removeMention': '{emoji} ユーザーを@メンションで指定してくださいなのです。\n使い方: `/{botName} whitelist remove @user`',
-  'whitelist.notInList': '{emoji} <@{userId}> はホワイトリストに含まれていないのです。',
-  'whitelist.cannotRemoveSelf': '{emoji} 自分自身をホワイトリストから削除することはできないのです。',
-  'whitelist.removed': '{emoji} <@{userId}> をホワイトリストから削除したのでーす！',
-  'whitelist.githubNotInList': '{emoji} `{username}` はホワイトリストに含まれていないのです。',
-  'whitelist.githubRemoved': '{emoji} GitHubユーザー `{username}` をホワイトリストから削除したのでーす！',
-  'whitelist.completed': '{emoji} 完了したのでーす！\n{results}',
-  'whitelist.unknownCommand': '{emoji} 不明なサブコマンドなのです。\n使い方: `/{botName} whitelist [add|add-github|remove|remove-github]`',
+  'whitelist.addMention': '{emoji} ユーザーを@メンションで指定なさい\n使い方: `/{botName} whitelist {command}`',
+  'whitelist.invalidGithub': '{emoji} GitHubユーザー名が正しくありませんわ\n英数字とハイフンのみ使用可能（1〜39文字）',
+  'whitelist.invalidGithubUsage': '{emoji} GitHubユーザー名が正しくありませんわ\n英数字とハイフンのみ使用可能（1〜39文字）\n使い方: `/{botName} whitelist {command} username`',
+  'whitelist.alreadyExists': '{emoji} `{username}` は既にホワイトリストに含まれていますわよ',
+  'whitelist.githubAdded': '{emoji} GitHubユーザー `{username}` をホワイトリストに追加いたしましたわ',
+  'whitelist.removeMention': '{emoji} ユーザーを@メンションで指定なさい\n使い方: `/{botName} whitelist remove @user`',
+  'whitelist.notInList': '{emoji} <@{userId}> はホワイトリストに含まれていませんわ',
+  'whitelist.cannotRemoveSelf': '{emoji} 自分自身をホワイトリストから削除することはできませんわよ',
+  'whitelist.removed': '{emoji} <@{userId}> をホワイトリストから削除いたしましたわ',
+  'whitelist.githubNotInList': '{emoji} `{username}` はホワイトリストに含まれていませんわ',
+  'whitelist.githubRemoved': '{emoji} GitHubユーザー `{username}` をホワイトリストから削除いたしましたわ',
+  'whitelist.completed': '{emoji} 完了ですわ\n{results}',
+  'whitelist.unknownCommand': '{emoji} 不明なサブコマンドですわね\n使い方: `/{botName} whitelist [add|add-github|remove|remove-github]`',
 
   // --- 承認 ---
-  'approval.onlyRequester': '{emoji} この承認はリクエストした人だけができるのです！',
-  'approval.mentionRequest': '<@{userId}> 承認をお願いするのでーす！',
-  'approval.requestText': '{emoji} 実行許可リクエストなのです: {tool}',
-  'approval.requestHeader': '{emoji} {name}からの実行許可リクエストであります！',
+  'approval.onlyRequester': '{emoji} この承認はリクエストした方だけが行えますわ',
+  'approval.mentionRequest': '<@{userId}> 承認をお願いいたしますわ',
+  'approval.requestText': '{emoji} 実行許可のリクエストですわ: {tool}',
+  'approval.requestHeader': '{emoji} {name}からの実行許可リクエストですわ',
 
   // --- 質問 ---
-  'question.text': '{emoji} お聞きしたいことがあるのです: {question}',
-  'question.header': '{emoji} {name}からの質問なのでーす！',
+  'question.text': '{emoji} 少しお聞きしたいことがありますわ: {question}',
+  'question.header': '{emoji} {name}からの質問ですわ',
 
   // --- GitHub Issue ---
-  'issue.startText': '{emoji} あいっ！GitHub Issue の処理を開始するのでーす！',
-  'issue.startHeader': '{emoji} GitHub Issue 処理開始であります！',
-  'issue.threadContext': '処理の進捗はこのスレッドに投稿するのです！お楽しみに〜♪',
+  'issue.startText': '{emoji} GitHub Issue の処理を開始いたしますわ',
+  'issue.startHeader': '{emoji} GitHub Issue の処理開始ですわ',
+  'issue.threadContext': '進捗はこのスレッドに投稿いたしますわ。…べ、別に気にかけてほしいわけじゃないですからね',
 
   // --- 提案 ---
-  'suggestion.modalText': 'この提案をタスクとして実行するのでーす！追加の指示があれば入力してください。',
-  'suggestion.execute': '{emoji} 提案「{title}」をタスクとして実行するのでーす！',
+  'suggestion.modalText': 'この提案をタスクとして実行いたしますわ。追加の指示があればどうぞ',
+  'suggestion.execute': '{emoji} 提案「{title}」をタスクとして実行いたしますわ',
 };
 
 // 設定ファイルのパス
