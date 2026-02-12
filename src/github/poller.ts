@@ -1,11 +1,12 @@
 /**
  * claps - GitHub Poller
- * GitHub Issue を定期的にポーリングして [claps] タグを検出する
+ * GitHub Issue を定期的にポーリングしてボット名タグを検出する
  */
 
 import { Octokit } from '@octokit/rest';
 import type { Config, GitHubTaskMetadata, AllowedUsers } from '../types/index.js';
 import { GetTaskQueue } from '../queue/taskQueue.js';
+import { GetBotName } from '../messages.js';
 
 // ポーラー状態
 interface PollerState {
@@ -250,21 +251,21 @@ async function PollRepoIssues(
     // 既に処理済みの場合はスキップ
     if (_processedIssues.has(issueKey)) continue;
 
-    // Issue 本文に [claps] が含まれているかチェック
+    // Issue 本文にボット名タグが含まれているかチェック
     const body = issue.body ?? '';
     const issueAuthor = issue.user?.login ?? '';
 
     let requestingUser: string | undefined;
 
-    if (ContainsClapsTag(body)) {
-      // Issue本文に[claps]がある場合、Issue作成者をチェック
+    if (ContainsBotTag(body)) {
+      // Issue本文にタグがある場合、Issue作成者をチェック
       requestingUser = issueAuthor;
     } else {
-      // コメントに[claps]があるかチェック（投稿者も取得）
+      // コメントにタグがあるかチェック（投稿者も取得）
       requestingUser = await FindAllowedUserInComments(owner, repo, issue.number);
     }
 
-    // [claps]タグが見つからない場合はスキップ
+    // ボット名タグが見つからない場合はスキップ
     if (!requestingUser) continue;
 
     // ホワイトリストチェック
@@ -284,7 +285,7 @@ async function PollRepoIssues(
     // 処理対象として記録
     _processedIssues.add(issueKey);
 
-    console.log(`Found issue with [claps] tag from ${requestingUser}: ${issueKey}`);
+    console.log(`Found issue with [${GetBotName()}] tag from ${requestingUser}: ${issueKey}`);
 
     const metadata: GitHubTaskMetadata = {
       source: 'github',
@@ -304,8 +305,8 @@ async function PollRepoIssues(
 }
 
 /**
- * コメントに [claps] が含まれているかチェックし、投稿者を返す
- * 複数のコメントに[claps]がある場合は最初に見つかったものを返す
+ * コメントにボット名タグが含まれているかチェックし、投稿者を返す
+ * 複数のコメントにタグがある場合は最初に見つかったものを返す
  */
 async function FindAllowedUserInComments(
   owner: string,
@@ -323,7 +324,7 @@ async function FindAllowedUserInComments(
     });
 
     for (const comment of comments) {
-      if (ContainsClapsTag(comment.body ?? '')) {
+      if (ContainsBotTag(comment.body ?? '')) {
         const login = comment.user?.login;
         // loginがない場合は次のコメントをチェック
         if (login) {
@@ -339,11 +340,12 @@ async function FindAllowedUserInComments(
 }
 
 /**
- * テキストに [claps] タグが含まれているかチェックする
+ * テキストに [botName] タグが含まれているかチェックする
  */
-function ContainsClapsTag(text: string): boolean {
-  // [claps] タグを検出（大文字小文字を区別しない）
-  return text.toLowerCase().includes('[claps]');
+function ContainsBotTag(text: string): boolean {
+  // [botName] タグを検出（大文字小文字を区別しない）
+  const tag = `[${GetBotName()}]`.toLowerCase();
+  return text.toLowerCase().includes(tag);
 }
 
 /**

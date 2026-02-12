@@ -29,7 +29,7 @@ export interface GitHubTaskMetadata {
   readonly issueNumber: number;
   readonly issueTitle: string;
   readonly issueUrl: string;
-  readonly requestingUser?: string; // [claps]タグを投稿したGitHubユーザー
+  readonly requestingUser?: string; // [botName]タグを投稿したGitHubユーザー
   slackThreadTs?: string; // Issue用のSlackスレッド
 }
 

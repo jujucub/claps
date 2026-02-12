@@ -9,9 +9,10 @@ A Slack-integrated Claude automation service with approval-based permission cont
 ## What is CLAPS?
 
 CLAPS is a bot that automatically analyzes code, applies fixes, and creates PRs when triggered by a simple tag or mention.
+The bot name defaults to `claps` but can be changed to any name via the `botName` field in `messages.json`.
 
-- **GitHub Issue** with `[claps]` tag &rarr; Analyzes the issue, modifies code, and creates a PR
-- **Slack** mention `@claps` &rarr; Executes tasks based on your instructions
+- **GitHub Issue** with `[botName]` tag (e.g. `[claps]`) &rarr; Analyzes the issue, modifies code, and creates a PR
+- **Slack** mention `@botName` (e.g. `@claps`) &rarr; Executes tasks based on your instructions
 - **Dangerous operations** &rarr; Requests approval via Slack modal (with optional comments)
 - **When judgment is needed** &rarr; Asks questions through Slack
 
@@ -25,7 +26,7 @@ CLAPS is a bot that automatically analyzes code, applies fixes, and creates PRs 
 | **Slack thread updates** | Real-time progress notifications in Slack threads |
 | **Modal approval** | Approve/deny with optional comment input |
 | **Session continuity** | Continues conversations within the same thread/issue |
-| **Slash command management** | Manage whitelists, repos, and user mappings via `/claps` |
+| **Slash command management** | Manage whitelists, repos, and user mappings via `/botName` slash command |
 | **Customizable persona** | Fully customizable character settings and message templates |
 
 ## Quick Start
@@ -83,12 +84,12 @@ npm start
 ### Automatic handling from GitHub Issues
 
 1. Create an issue
-2. Include `[claps]` in the title or body
-3. CLAPS auto-detects and starts processing
+2. Include `[botName]` (e.g. `[claps]`) in the title or body
+3. The bot auto-detects and starts processing
 4. A PR is automatically created upon completion
 
 ```markdown
-# Example issue title
+# Example issue title (with default botName "claps")
 [claps] Fix login screen bug
 
 # Example issue body
@@ -98,10 +99,12 @@ Please fix the issue where the login button is unresponsive.
 ### Instruct via Slack
 
 ```
-@claps Write tests for this file
+@botName Write tests for this file
 ```
 
 ### Manage via Slack commands
+
+The examples below use the default `botName` of `claps`. If you change `botName`, the command will be registered under that name.
 
 ```
 /claps help                              Show help
@@ -137,12 +140,23 @@ Create `~/.claps/messages.json` to customize bot messages:
   "emoji": "🤖",
   "slackEmoji": ":robot_face:",
   "name": "MyBot",
+  "botName": "mybot",
   "messages": {
     "task.started": "{emoji} Roger! Starting: {description}",
     "task.completed": "{emoji} Done! {message}"
   }
 }
 ```
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `emoji` | `🍑` | Emoji used in console and Slack messages |
+| `slackEmoji` | `:peach:` | Slack-specific emoji code |
+| `name` | `すもも` | Display name for the character |
+| `botName` | `claps` | Used for slash command (`/botName`), mention (`@botName`), GitHub Issue tag (`[botName]`), and git branch prefix (`botName/issue-123`) |
+| `messages` | `{}` | Message template overrides |
+
+**Important:** When changing `botName`, also update the corresponding slash command name and bot display name in your Slack App settings.
 
 See `src/messages.ts` for all available message keys.
 

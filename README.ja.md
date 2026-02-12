@@ -8,10 +8,11 @@ Slack承認付きClaude自動化サービス。カスタマイズ可能なキャ
 
 ## これは何？
 
-`[claps]` タグを付けるだけで、Claude が自動でコード修正・PR作成を行うBotです。
+ボット名タグを付けるだけで、Claude が自動でコード修正・PR作成を行うBotです。
+ボット名はデフォルトで `claps` ですが、`messages.json` の `botName` で任意の名前に変更できます。
 
-- **GitHub Issue** に `[claps]` タグ &rarr; Issue を分析してコード修正、PR作成
-- **Slack** で `@claps` &rarr; 指示に従ってタスク実行
+- **GitHub Issue** に `[ボット名]` タグ（例: `[claps]`） &rarr; Issue を分析してコード修正、PR作成
+- **Slack** で `@ボット名`（例: `@claps`） &rarr; 指示に従ってタスク実行
 - **危険な操作** &rarr; Slack モーダルで承認を求める（コメント入力可）
 - **判断が必要な時** &rarr; Slack で質問してくる
 
@@ -25,7 +26,7 @@ Slack承認付きClaude自動化サービス。カスタマイズ可能なキャ
 | **Slackスレッド** | Issue処理の進捗をスレッドでリアルタイム通知 |
 | **モーダル承認** | 許可/拒否時にコメント入力可能 |
 | **セッション継続** | 同じスレッド/Issueでの会話を継続可能 |
-| **Slackコマンド管理** | `/claps` コマンドでホワイトリスト・リポジトリ・ユーザーマッピングを管理 |
+| **Slackコマンド管理** | `/ボット名` コマンドでホワイトリスト・リポジトリ・ユーザーマッピングを管理 |
 | **キャラクタカスタマイズ** | キャラクタ設定・メッセージテンプレートを自由にカスタマイズ可能 |
 
 ## クイックスタート
@@ -83,12 +84,12 @@ npm start
 ### GitHub Issue から自動対応
 
 1. Issue を作成
-2. タイトルまたは本文に `[claps]` を含める
-3. claps が自動検知して処理開始
+2. タイトルまたは本文に `[ボット名]`（例: `[claps]`）を含める
+3. ボットが自動検知して処理開始
 4. 完了後、PRが自動作成される
 
 ```markdown
-# Issue タイトル例
+# Issue タイトル例（botName が "claps" の場合）
 [claps] ログイン画面のバグを修正
 
 # Issue 本文例
@@ -98,10 +99,12 @@ npm start
 ### Slack から指示
 
 ```
-@claps このファイルのテストを書いて
+@ボット名 このファイルのテストを書いて
 ```
 
 ### Slack コマンドで管理
+
+以下の例は `botName` がデフォルトの `claps` の場合です。`botName` を変更した場合はそちらの名前でコマンドが登録されます。
 
 ```
 /claps help                              ヘルプ表示
@@ -137,12 +140,23 @@ npm start
   "emoji": "🤖",
   "slackEmoji": ":robot_face:",
   "name": "マイボット",
+  "botName": "mybot",
   "messages": {
     "task.started": "{emoji} 了解！処理を開始します: {description}",
     "task.completed": "{emoji} 完了！{message}"
   }
 }
 ```
+
+| フィールド | デフォルト | 説明 |
+|-----------|-----------|------|
+| `emoji` | `🍑` | コンソールやSlackメッセージに使用される絵文字 |
+| `slackEmoji` | `:peach:` | Slack専用の絵文字コード |
+| `name` | `すもも` | キャラクタの表示名 |
+| `botName` | `claps` | スラッシュコマンド名（`/botName`）、メンション名（`@botName`）、GitHub Issueタグ（`[botName]`）、Gitブランチプレフィックス（`botName/issue-123`）に使用 |
+| `messages` | `{}` | メッセージテンプレートのオーバーライド |
+
+**重要:** `botName` を変更する場合は、Slack App の設定でも対応するスラッシュコマンド名とボット表示名を変更してください。
 
 利用可能なメッセージキーの一覧は `src/messages.ts` を参照してください。
 

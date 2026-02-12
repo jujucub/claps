@@ -24,7 +24,7 @@ import {
   UpdateReflectionConfig,
   GetReflectionConfig,
 } from '../reflection/scheduler.js';
-import { Msg } from '../messages.js';
+import { Msg, GetBotName } from '../messages.js';
 
 // ホワイトリスト（RegisterSlackHandlersで設定、UpdateAllowedUsersで更新可能）
 let _allowedUsers: AllowedUsers | undefined;
@@ -251,8 +251,9 @@ export function RegisterSlackHandlers(
   // ホワイトリストを保存
   _allowedUsers = allowedUsers;
 
-  // /claps スラッシュコマンドの処理
-  app.command('/claps', async ({ command, ack, respond }) => {
+  // スラッシュコマンドの処理（ボット名で動的登録）
+  const botName = GetBotName();
+  app.command(`/${botName}`, async ({ command, ack, respond }) => {
     await ack();
 
     const userId = command.user_id;
@@ -274,59 +275,60 @@ export function RegisterSlackHandlers(
     // ヘルプ表示
     if (!text || subCommand === 'help') {
       const isAdmin = IsAdmin(userId);
+      const cmd = `/${botName}`;
       let helpText = `${Msg('command.helpTitle')}
 
 *基本コマンド:*
-\`/claps owner/repo メッセージ\`
+\`${cmd} owner/repo メッセージ\`
 → 指定したリポジトリの環境でClaudeを実行
 
-\`/claps repos\`
+\`${cmd} repos\`
 → 監視対象リポジトリの一覧を表示
 
 *例:*
-\`/claps h-sato/my-project バグを修正して\``;
+\`${cmd} h-sato/my-project バグを修正して\``;
 
       helpText += `
 
 *内省コマンド:*
-\`/claps reflection\`
+\`${cmd} reflection\`
 → 内省機能のステータス表示`;
 
       if (isAdmin) {
         helpText += `
 
 *管理者コマンド:*
-\`/claps add-repo owner/repo\`
+\`${cmd} add-repo owner/repo\`
 → 監視リポジトリを追加
 
-\`/claps remove-repo owner/repo\`
+\`${cmd} remove-repo owner/repo\`
 → 監視リポジトリを削除
 
-\`/claps reflection run\`
+\`${cmd} reflection run\`
 → 内省を手動実行
 
-\`/claps reflection enable\`
+\`${cmd} reflection enable\`
 → 内省機能を有効化
 
-\`/claps reflection disable\`
+\`${cmd} reflection disable\`
 → 内省機能を無効化
 
-\`/claps reflection schedule HH:MM\`
+\`${cmd} reflection schedule HH:MM\`
 → 内省の実行時刻を変更
 
-\`/claps whitelist\`
+\`${cmd} whitelist\`
 → ホワイトリストを表示（マッピング情報含む）
 
-\`/claps whitelist add @user [github-username]\`
+\`${cmd} whitelist add @user [github-username]\`
 → ユーザーをホワイトリストに追加（GitHub名を指定するとマッピングも同時作成）
 
-\`/claps whitelist add-github username\`
+\`${cmd} whitelist add-github username\`
 → GitHubユーザーのみをホワイトリストに追加
 
-\`/claps whitelist remove @user\`
+\`${cmd} whitelist remove @user\`
 → Slackユーザーをホワイトリストから削除
 
-\`/claps whitelist remove-github username\`
+\`${cmd} whitelist remove-github username\`
 → GitHubユーザーをホワイトリストから削除`;
       }
 
@@ -852,7 +854,7 @@ export function RegisterSlackHandlers(
     });
   });
 
-  // @claps メンションの処理
+  // @bot メンションの処理
   app.event('app_mention', async ({ event, say }) => {
     const text = event.text;
     const userId = event.user ?? 'unknown';
@@ -868,7 +870,7 @@ export function RegisterSlackHandlers(
       return;
     }
 
-    // @claps を除いた指示テキスト
+    // @bot を除いた指示テキスト
     const prompt = text.replace(/<@[A-Z0-9]+>/g, '').trim();
 
     if (!prompt) {

@@ -7,6 +7,7 @@ import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
+import { GetBotName } from '../messages.js';
 
 // clapsのPreToolUseフック設定（承認用）
 // matcher空文字列で全ツールに対してHookを実行
@@ -52,7 +53,7 @@ export async function CreateWorktree(
   repo: string,
   issueNumber: number
 ): Promise<WorktreeInfo> {
-  const branchName = `claps/issue-${issueNumber}`;
+  const branchName = `${GetBotName()}/issue-${issueNumber}`;
   const worktreeDir = path.join(baseDir, '.worktrees', `issue-${issueNumber}`);
   const worktreeKey = `${owner}/${repo}#${issueNumber}`;
 
@@ -421,16 +422,21 @@ export async function InjectClaudeSettings(worktreeDir: string): Promise<void> {
   console.log(`Injected claps .claude settings into ${worktreeDir}`);
 }
 
-// ワークスペース用のスターター CLAUDE.md
-const WORKSPACE_CLAUDE_MD = `# Claps Workspace
+/**
+ * ワークスペース用のスターター CLAUDE.md を生成する
+ */
+function GetWorkspaceClaudeMd(): string {
+  const name = GetBotName();
+  return `# ${name} Workspace
 
-このディレクトリは claps の汎用ワークスペースです。
+このディレクトリは ${name} の汎用ワークスペースです。
 リポジトリ指定なしの Slack タスクがここで実行されます。
 
 ## 注意事項
 - このディレクトリにはリポジトリのコードはありません
 - 調査・質問応答・一般的なタスクに使用されます
 `;
+}
 
 /**
  * 汎用ワークスペースを初期化する
@@ -454,7 +460,7 @@ export async function InitializeWorkspace(workspacePath: string): Promise<void> 
   // スターター CLAUDE.md を作成（初回のみ）
   const claudeMdPath = path.join(workspacePath, 'CLAUDE.md');
   if (!fs.existsSync(claudeMdPath)) {
-    fs.writeFileSync(claudeMdPath, WORKSPACE_CLAUDE_MD);
+    fs.writeFileSync(claudeMdPath, GetWorkspaceClaudeMd());
   }
 
   // Claude CLI のプロジェクト初期化（初回のみ）
@@ -484,7 +490,7 @@ async function WarmUpClaudeProject(workspacePath: string): Promise<void> {
   }
 
   console.log('Warming up Claude CLI project via tmux (interactive trust)...');
-  const sessionName = 'claps-warmup';
+  const sessionName = `${GetBotName()}-warmup`;
 
   // 既存セッションをクリーンアップ
   try {
