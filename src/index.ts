@@ -60,6 +60,7 @@ import {
   PostReflectionResult,
   SetSuggestionApprovedCallback,
 } from './slack/handlers.js';
+import { Msg } from './messages.js';
 
 // 作業ログの投稿間隔（ミリ秒）
 const WORK_LOG_INTERVAL_MS = 10000;
@@ -75,7 +76,7 @@ let _isProcessing = false;
  * アプリケーションを起動する
  */
 async function Start(): Promise<void> {
-  console.log('🍑 すももを起動するのでーす！');
+  console.log(Msg('console.startup'));
 
   // 設定を読み込む
   _config = LoadConfig();
@@ -116,14 +117,14 @@ async function Start(): Promise<void> {
   StartReflectionScheduler();
 
   _isRunning = true;
-  console.log('🍑 すももの起動完了であります！');
+  console.log(Msg('console.startupComplete'));
 }
 
 /**
  * アプリケーションを停止する
  */
 async function Stop(): Promise<void> {
-  console.log('🍑 すももを停止するのでーす...');
+  console.log(Msg('console.shutdown'));
 
   _isRunning = false;
 
@@ -136,7 +137,7 @@ async function Stop(): Promise<void> {
   // worktree をクリーンアップ
   await CleanupAllWorktrees();
 
-  console.log('🍑 すもも、おやすみなさいなのです！');
+  console.log(Msg('console.shutdownComplete'));
 }
 
 /**
@@ -384,7 +385,7 @@ async function ProcessSlackAsIssueTask(
       await NotifyProgress(
         slackApp,
         _config.slackChannelId,
-        `Issue #${issueInfo.issueNumber} の作業を継続するのでーす！`,
+        Msg('task.resumeIssue', { issueNumber: String(issueInfo.issueNumber) }),
         slackMeta.threadTs
       );
     }
@@ -431,7 +432,7 @@ async function ProcessSlackAsIssueTask(
       await NotifyProgress(
         slackApp,
         _config.slackChannelId,
-        '変更をコミット＆プッシュしたのでーす！',
+        Msg('task.commitPush'),
         slackMeta.threadTs
       );
     }
@@ -496,14 +497,14 @@ async function ProcessSlackWithTargetRepo(
       await NotifyProgress(
         slackApp,
         _config.slackChannelId,
-        `既存のブランチ \`${worktreeInfo.branchName}\` で作業を継続するのでーす！`,
+        Msg('task.resumeBranch', { branch: worktreeInfo.branchName }),
         slackMeta.threadTs
       );
     } else {
       await NotifyProgress(
         slackApp,
         _config.slackChannelId,
-        `ブランチ \`${worktreeInfo.branchName}\` で作業を開始するのです！`,
+        Msg('task.startBranch', { branch: worktreeInfo.branchName }),
         slackMeta.threadTs
       );
     }
@@ -585,14 +586,14 @@ async function ProcessGitHubTask(
       await NotifyProgress(
         slackApp,
         _config.slackChannelId,
-        `既存のブランチ \`${worktreeInfo.branchName}\` で作業を継続するのでーす！`,
+        Msg('task.resumeBranch', { branch: worktreeInfo.branchName }),
         threadTs
       );
     } else {
       await NotifyProgress(
         slackApp,
         _config.slackChannelId,
-        `ブランチ \`${worktreeInfo.branchName}\` で作業を開始するのです！`,
+        Msg('task.startBranch', { branch: worktreeInfo.branchName }),
         threadTs
       );
     }
@@ -604,7 +605,7 @@ async function ProcessGitHubTask(
       await NotifyProgress(
         slackApp,
         _config.slackChannelId,
-        '前回のセッションを継続するのでーす！',
+        Msg('task.resumeSession'),
         threadTs
       );
     } else {
@@ -619,7 +620,7 @@ async function ProcessGitHubTask(
       threadTs
     );
 
-    await NotifyProgress(slackApp, _config.slackChannelId, 'Claude を起動中なのでーす！', threadTs);
+    await NotifyProgress(slackApp, _config.slackChannelId, Msg('task.startClaude'), threadTs);
 
     const onWorkLog = CreateWorkLogCallback(slackApp, _config!.slackChannelId, threadTs);
 
@@ -674,7 +675,7 @@ async function NotifyResult(
       message = message.slice(0, maxLength) + '\n...(省略)';
     }
     if (!message) {
-      message = '処理が完了したのでーす！（出力なしなのです）';
+      message = Msg('task.completeNoOutput');
     }
 
     await NotifyTaskCompleted(
@@ -689,9 +690,9 @@ async function NotifyResult(
     // GitHub Issue の場合はコメントを投稿
     if (task.metadata.source === 'github') {
       const meta = task.metadata;
-      let comment = '🍑 すももが処理を完了したのでーす！お疲れ様でした！';
+      let comment = Msg('task.completeComment');
       if (result.prUrl) {
-        comment += `\n\nPRを作成したのです: ${result.prUrl}`;
+        comment += Msg('task.completeCommentPr', { prUrl: result.prUrl });
       }
       await PostIssueComment(meta.owner, meta.repo, meta.issueNumber, comment);
     }
@@ -902,7 +903,7 @@ async function Main(): Promise<void> {
       const slackApp = GetSlackBot();
       await slackApp.client.chat.postMessage({
         channel: _config.slackChannelId,
-        text: '🍑 朝でーす！すももが起動したのでーす！@sumomo でメンションしてくださいなのです！',
+        text: Msg('morning.greeting'),
       });
     }
   } catch (error) {

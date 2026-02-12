@@ -24,6 +24,7 @@ import {
   UpdateReflectionConfig,
   GetReflectionConfig,
 } from '../reflection/scheduler.js';
+import { Msg } from '../messages.js';
 
 // ホワイトリスト（RegisterSlackHandlersで設定、UpdateAllowedUsersで更新可能）
 let _allowedUsers: AllowedUsers | undefined;
@@ -127,19 +128,19 @@ export async function PostReflectionResult(
 ): Promise<void> {
   // ユーザーごとの提案数を集計
   const userSummaries = result.userReflections.map((r) => {
-    return `<@${r.userId}> さんへの提案が ${r.suggestions.length} 件ありますー！`;
+    return Msg('reflection.userSummary', { userId: r.userId, count: String(r.suggestions.length) });
   });
 
   // 親メッセージを投稿
   const parentResult = await app.client.chat.postMessage({
     channel: channelId,
-    text: `:peach: おはようなのでーす！日次内省レポート (${result.date})`,
+    text: Msg('reflection.title', { date: result.date }),
     blocks: [
       {
         type: 'header',
         text: {
           type: 'plain_text',
-          text: ':peach: 日次内省レポートであります！',
+          text: Msg('reflection.header'),
           emoji: true,
         },
       },
@@ -147,7 +148,7 @@ export async function PostReflectionResult(
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `*${result.date}* の内省結果なのでーす！\n\n${userSummaries.join('\n')}`,
+          text: Msg('reflection.result', { date: result.date, summaries: userSummaries.join('\n') }),
         },
       },
     ],
@@ -261,7 +262,7 @@ export function RegisterSlackHandlers(
       console.log(`Denied Slack command from ${userId} (not in whitelist)`);
       await respond({
         response_type: 'ephemeral',
-        text: 'このコマンドを使用する権限がないのです。',
+        text: Msg('command.noPermission'),
       });
       return;
     }
@@ -273,7 +274,7 @@ export function RegisterSlackHandlers(
     // ヘルプ表示
     if (!text || subCommand === 'help') {
       const isAdmin = IsAdmin(userId);
-      let helpText = `🍑 *すももコマンドの使い方*
+      let helpText = `${Msg('command.helpTitle')}
 
 *基本コマンド:*
 \`/sumomo owner/repo メッセージ\`
@@ -354,7 +355,7 @@ export function RegisterSlackHandlers(
 
         await respond({
           response_type: 'ephemeral',
-          text: `🍑 *内省機能ステータス*\n\n• 状態: ${status}\n• 実行時刻: ${schedule} (${timezone})\n• 履歴日数: ${historyDays}日\n• 最終実行: ${lastRun}`,
+          text: Msg('reflection.status', { status, schedule, timezone, historyDays: String(historyDays), lastRun }),
         });
         return;
       }
@@ -363,7 +364,7 @@ export function RegisterSlackHandlers(
       if (!IsAdmin(userId)) {
         await respond({
           response_type: 'ephemeral',
-          text: '🍑 このコマンドは管理者のみ使用できるのです。',
+          text: Msg('command.adminOnly'),
         });
         return;
       }
@@ -372,7 +373,7 @@ export function RegisterSlackHandlers(
       if (reflectionAction === 'run') {
         await respond({
           response_type: 'ephemeral',
-          text: '🍑 内省を手動実行するのでーす！しばらくお待ちください。',
+          text: Msg('reflection.manualRun'),
         });
 
         void RunReflectionManually().then((result) => {
@@ -380,7 +381,7 @@ export function RegisterSlackHandlers(
             void app.client.chat.postEphemeral({
               channel: command.channel_id,
               user: userId,
-              text: '🍑 内省の実行結果がなかったのです。アクティブユーザーがいないか、エラーが発生した可能性があります。',
+              text: Msg('reflection.noResult'),
             });
           }
         });
@@ -392,7 +393,7 @@ export function RegisterSlackHandlers(
         UpdateReflectionConfig({ enabled: true });
         await respond({
           response_type: 'ephemeral',
-          text: '🍑 内省機能を有効化したのでーす！',
+          text: Msg('reflection.enabled'),
         });
         return;
       }
@@ -402,7 +403,7 @@ export function RegisterSlackHandlers(
         UpdateReflectionConfig({ enabled: false });
         await respond({
           response_type: 'ephemeral',
-          text: '🍑 内省機能を無効化したのでーす！',
+          text: Msg('reflection.disabled'),
         });
         return;
       }
@@ -413,7 +414,7 @@ export function RegisterSlackHandlers(
         if (!/^\d{2}:\d{2}$/.test(time)) {
           await respond({
             response_type: 'ephemeral',
-            text: '🍑 時刻の形式が正しくないのです。\n使い方: `/sumomo reflection schedule HH:MM`',
+            text: Msg('reflection.invalidTime'),
           });
           return;
         }
@@ -421,14 +422,14 @@ export function RegisterSlackHandlers(
         UpdateReflectionConfig({ schedule: time });
         await respond({
           response_type: 'ephemeral',
-          text: `🍑 内省の実行時刻を ${time} に変更したのでーす！`,
+          text: Msg('reflection.scheduleChanged', { time }),
         });
         return;
       }
 
       await respond({
         response_type: 'ephemeral',
-        text: '🍑 不明なサブコマンドなのです。\n使い方: `/sumomo reflection [run|enable|disable|schedule HH:MM]`',
+        text: Msg('reflection.unknownCommand'),
       });
       return;
     }
@@ -441,7 +442,7 @@ export function RegisterSlackHandlers(
       if (repos.length === 0) {
         await respond({
           response_type: 'ephemeral',
-          text: '🍑 監視対象のリポジトリはまだ登録されていないのです。',
+          text: Msg('repos.empty'),
         });
         return;
       }
@@ -449,7 +450,7 @@ export function RegisterSlackHandlers(
       const repoList = repos.map((repo, i) => `${i + 1}. \`${repo}\``).join('\n');
       await respond({
         response_type: 'ephemeral',
-        text: `🍑 *監視対象リポジトリ一覧* (${repos.length}件)\n\n${repoList}`,
+        text: Msg('repos.list', { count: String(repos.length), repoList }),
       });
       return;
     }
@@ -459,7 +460,7 @@ export function RegisterSlackHandlers(
       if (!IsAdmin(userId)) {
         await respond({
           response_type: 'ephemeral',
-          text: '🍑 このコマンドは管理者のみ使用できるのです。',
+          text: Msg('command.adminOnly'),
         });
         return;
       }
@@ -468,7 +469,7 @@ export function RegisterSlackHandlers(
       if (!IsValidRepoFormat(repoToAdd)) {
         await respond({
           response_type: 'ephemeral',
-          text: '🍑 リポジトリの形式が正しくないのです。\n使い方: `/sumomo add-repo owner/repo`',
+          text: Msg('repos.invalidFormat', { command: 'add-repo' }),
         });
         return;
       }
@@ -477,7 +478,7 @@ export function RegisterSlackHandlers(
       if (config.githubRepos.includes(repoToAdd)) {
         await respond({
           response_type: 'ephemeral',
-          text: `🍑 \`${repoToAdd}\` は既に監視対象に含まれているのです。`,
+          text: Msg('repos.alreadyAdded', { repo: repoToAdd }),
         });
         return;
       }
@@ -488,7 +489,7 @@ export function RegisterSlackHandlers(
 
       await respond({
         response_type: 'ephemeral',
-        text: `🍑 \`${repoToAdd}\` を監視対象に追加したのでーす！`,
+        text: Msg('repos.added', { repo: repoToAdd }),
       });
       return;
     }
@@ -498,7 +499,7 @@ export function RegisterSlackHandlers(
       if (!IsAdmin(userId)) {
         await respond({
           response_type: 'ephemeral',
-          text: '🍑 このコマンドは管理者のみ使用できるのです。',
+          text: Msg('command.adminOnly'),
         });
         return;
       }
@@ -507,7 +508,7 @@ export function RegisterSlackHandlers(
       if (!IsValidRepoFormat(repoToRemove)) {
         await respond({
           response_type: 'ephemeral',
-          text: '🍑 リポジトリの形式が正しくないのです。\n使い方: `/sumomo remove-repo owner/repo`',
+          text: Msg('repos.invalidFormat', { command: 'remove-repo' }),
         });
         return;
       }
@@ -516,7 +517,7 @@ export function RegisterSlackHandlers(
       if (!config.githubRepos.includes(repoToRemove)) {
         await respond({
           response_type: 'ephemeral',
-          text: `🍑 \`${repoToRemove}\` は監視対象に含まれていないのです。`,
+          text: Msg('repos.notFound', { repo: repoToRemove }),
         });
         return;
       }
@@ -527,7 +528,7 @@ export function RegisterSlackHandlers(
 
       await respond({
         response_type: 'ephemeral',
-        text: `🍑 \`${repoToRemove}\` を監視対象から削除したのでーす！`,
+        text: Msg('repos.removed', { repo: repoToRemove }),
       });
       return;
     }
@@ -537,7 +538,7 @@ export function RegisterSlackHandlers(
       if (!IsAdmin(userId)) {
         await respond({
           response_type: 'ephemeral',
-          text: '🍑 このコマンドは管理者のみ使用できるのです。',
+          text: Msg('command.adminOnly'),
         });
         return;
       }
@@ -551,7 +552,7 @@ export function RegisterSlackHandlers(
         const githubUsers = config.allowedGithubUsers;
         const mappings = config.userMappings;
 
-        let text = '🍑 *ホワイトリスト*\n\n';
+        let text = Msg('whitelist.title');
         text += `*Slackユーザー* (${slackUsers.length}件):\n`;
         if (slackUsers.length > 0) {
           text += slackUsers.map((u) => {
@@ -586,7 +587,7 @@ export function RegisterSlackHandlers(
         if (!match) {
           await respond({
             response_type: 'ephemeral',
-            text: '🍑 ユーザーを@メンションで指定してくださいなのです。\n使い方: `/sumomo whitelist add @user [github-username]`',
+            text: Msg('whitelist.addMention', { command: 'add @user [github-username]' }),
           });
           return;
         }
@@ -612,7 +613,7 @@ export function RegisterSlackHandlers(
           if (!IsValidGitHubUsername(githubUsername)) {
             await respond({
               response_type: 'ephemeral',
-              text: '🍑 GitHubユーザー名が正しくないのです。\n英数字とハイフンのみ使用可能（1〜39文字）',
+              text: Msg('whitelist.invalidGithub'),
             });
             return;
           }
@@ -653,7 +654,7 @@ export function RegisterSlackHandlers(
 
         await respond({
           response_type: 'ephemeral',
-          text: `🍑 完了したのでーす！\n${results.map((r) => `• ${r}`).join('\n')}`,
+          text: Msg('whitelist.completed', { results: results.map((r) => `• ${r}`).join('\n') }),
         });
         return;
       }
@@ -664,7 +665,7 @@ export function RegisterSlackHandlers(
         if (!IsValidGitHubUsername(githubUsername)) {
           await respond({
             response_type: 'ephemeral',
-            text: '🍑 GitHubユーザー名が正しくないのです。\n英数字とハイフンのみ使用可能（1〜39文字）\n使い方: `/sumomo whitelist add-github username`',
+            text: Msg('whitelist.invalidGithubUsage', { command: 'add-github' }),
           });
           return;
         }
@@ -673,7 +674,7 @@ export function RegisterSlackHandlers(
         if (config.allowedGithubUsers.some((u) => u.toLowerCase() === lowerUsername)) {
           await respond({
             response_type: 'ephemeral',
-            text: `🍑 \`${githubUsername}\` は既にホワイトリストに含まれているのです。`,
+            text: Msg('whitelist.alreadyExists', { username: githubUsername }),
           });
           return;
         }
@@ -684,7 +685,7 @@ export function RegisterSlackHandlers(
 
         await respond({
           response_type: 'ephemeral',
-          text: `🍑 GitHubユーザー \`${githubUsername}\` をホワイトリストに追加したのでーす！`,
+          text: Msg('whitelist.githubAdded', { username: githubUsername }),
         });
         return;
       }
@@ -696,7 +697,7 @@ export function RegisterSlackHandlers(
         if (!match) {
           await respond({
             response_type: 'ephemeral',
-            text: '🍑 ユーザーを@メンションで指定してくださいなのです。\n使い方: `/sumomo whitelist remove @user`',
+            text: Msg('whitelist.removeMention'),
           });
           return;
         }
@@ -705,7 +706,7 @@ export function RegisterSlackHandlers(
         if (!config.allowedSlackUsers.includes(targetUserId)) {
           await respond({
             response_type: 'ephemeral',
-            text: `🍑 <@${targetUserId}> はホワイトリストに含まれていないのです。`,
+            text: Msg('whitelist.notInList', { userId: targetUserId }),
           });
           return;
         }
@@ -714,7 +715,7 @@ export function RegisterSlackHandlers(
         if (targetUserId === userId) {
           await respond({
             response_type: 'ephemeral',
-            text: '🍑 自分自身をホワイトリストから削除することはできないのです。',
+            text: Msg('whitelist.cannotRemoveSelf'),
           });
           return;
         }
@@ -726,7 +727,7 @@ export function RegisterSlackHandlers(
         SaveAdminConfig({ ...config, allowedSlackUsers: newSlackUsers, userMappings: newMappings });
         UpdateAllowedUsers(newSlackUsers);
 
-        let responseText = `🍑 <@${targetUserId}> をホワイトリストから削除したのでーす！`;
+        let responseText = Msg('whitelist.removed', { userId: targetUserId });
         if (removedMapping) {
           responseText += `\nマッピング（\`${removedMapping.github}\` ↔ <@${targetUserId}>）も削除しました。`;
         }
@@ -744,7 +745,7 @@ export function RegisterSlackHandlers(
         if (!IsValidGitHubUsername(githubUsername)) {
           await respond({
             response_type: 'ephemeral',
-            text: '🍑 GitHubユーザー名が正しくないのです。\n英数字とハイフンのみ使用可能（1〜39文字）\n使い方: `/sumomo whitelist remove-github username`',
+            text: Msg('whitelist.invalidGithubUsage', { command: 'remove-github' }),
           });
           return;
         }
@@ -756,7 +757,7 @@ export function RegisterSlackHandlers(
         if (!existingUser) {
           await respond({
             response_type: 'ephemeral',
-            text: `🍑 \`${githubUsername}\` はホワイトリストに含まれていないのです。`,
+            text: Msg('whitelist.githubNotInList', { username: githubUsername }),
           });
           return;
         }
@@ -774,7 +775,7 @@ export function RegisterSlackHandlers(
         SaveAdminConfig({ ...config, allowedGithubUsers: newGithubUsers, userMappings: newMappings });
         UpdateGitHubAllowedUsers(newGithubUsers);
 
-        let responseText = `🍑 GitHubユーザー \`${existingUser}\` をホワイトリストから削除したのでーす！`;
+        let responseText = Msg('whitelist.githubRemoved', { username: existingUser });
         if (removedMapping) {
           responseText += `\nマッピング（\`${existingUser}\` ↔ <@${removedMapping.slack}>）も削除しました。`;
         }
@@ -789,7 +790,7 @@ export function RegisterSlackHandlers(
       // 不明なwhitelistサブコマンド
       await respond({
         response_type: 'ephemeral',
-        text: '🍑 不明なサブコマンドなのです。\n使い方: `/sumomo whitelist [add|add-github|remove|remove-github]`',
+        text: Msg('whitelist.unknownCommand'),
       });
       return;
     }
@@ -800,7 +801,7 @@ export function RegisterSlackHandlers(
     if (!IsValidRepoFormat(firstPart)) {
       await respond({
         response_type: 'ephemeral',
-        text: `🍑 リポジトリの形式が正しくないか、不明なコマンドなのです。\n\n使い方: \`/sumomo owner/repo メッセージ\`\nヘルプ: \`/sumomo help\``,
+        text: Msg('command.invalidRepo'),
       });
       return;
     }
@@ -811,7 +812,7 @@ export function RegisterSlackHandlers(
     if (!prompt) {
       await respond({
         response_type: 'ephemeral',
-        text: '🍑 メッセージを入力してくださいなのです！\n\n例: `/sumomo owner/repo バグを修正して`',
+        text: Msg('command.noMessage'),
       });
       return;
     }
@@ -819,13 +820,13 @@ export function RegisterSlackHandlers(
     // チャンネルに開始通知を投稿（スレッドの起点となる）
     const startMessage = await app.client.chat.postMessage({
       channel: command.channel_id,
-      text: `🍑 あいっ！\`${targetRepo}\` で処理を開始するのでーす！`,
+      text: Msg('command.start', { repo: targetRepo }),
       blocks: [
         {
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `🍑 *すももコマンド実行*\nリポジトリ: \`${targetRepo}\`\nリクエスト: ${prompt.slice(0, 100)}${prompt.length > 100 ? '...' : ''}\n実行者: <@${userId}>`,
+            text: Msg('command.execution', { repo: targetRepo, prompt: `${prompt.slice(0, 100)}${prompt.length > 100 ? '...' : ''}`, userId }),
           },
         },
       ],
@@ -847,7 +848,7 @@ export function RegisterSlackHandlers(
     // ephemeral レスポンス
     await respond({
       response_type: 'ephemeral',
-      text: `🍑 \`${targetRepo}\` で処理を開始したのでーす！スレッドで進捗を確認できます。`,
+      text: Msg('command.started', { repo: targetRepo }),
     });
   });
 
@@ -872,7 +873,7 @@ export function RegisterSlackHandlers(
 
     if (!prompt) {
       await say({
-        text: 'はいっ！何をお手伝いしましょうか〜？ご用件をお聞かせくださいなのです！',
+        text: Msg('mention.emptyPrompt'),
         thread_ts: threadTs,
       });
       return;
@@ -880,7 +881,7 @@ export function RegisterSlackHandlers(
 
     // スレッドで処理開始を通知
     await say({
-      text: '🍑 あいっ！処理を開始するのでーす！',
+      text: Msg('mention.start'),
       thread_ts: threadTs,
     });
 
@@ -917,7 +918,7 @@ export function RegisterSlackHandlers(
       await client.chat.postEphemeral({
         channel: pending.channelId,
         user: body.user.id,
-        text: '🍑 この承認はリクエストした人だけができるのです！',
+        text: Msg('approval.onlyRequester'),
       });
       return;
     }
@@ -990,7 +991,7 @@ export function RegisterSlackHandlers(
       await client.chat.postEphemeral({
         channel: pending.channelId,
         user: body.user.id,
-        text: '🍑 この承認はリクエストした人だけができるのです！',
+        text: Msg('approval.onlyRequester'),
       });
       return;
     }
@@ -1213,7 +1214,7 @@ export function RegisterSlackHandlers(
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: 'この提案をタスクとして実行するのでーす！追加の指示があれば入力してください。',
+              text: Msg('suggestion.modalText'),
             },
           },
           {
@@ -1298,7 +1299,7 @@ export function RegisterSlackHandlers(
       // 開始メッセージを投稿
       const startResult = await client.chat.postMessage({
         channel: channelId,
-        text: `🍑 提案「${suggestion.title}」をタスクとして実行するのでーす！`,
+        text: Msg('suggestion.execute', { title: suggestion.title }),
       });
 
       const threadTs = startResult.ts ?? '';
@@ -1354,20 +1355,20 @@ export async function RequestApproval(
 
     // メンションテキストを構築
     const mentionText = requestedBySlackId
-      ? `<@${requestedBySlackId}> 承認をお願いするのでーす！`
+      ? Msg('approval.mentionRequest', { userId: requestedBySlackId })
       : '';
 
     // Slack にメッセージを送信（threadTs がある場合はスレッドに投稿）
     void app.client.chat.postMessage({
       channel: channelId,
       thread_ts: threadTs,
-      text: `🍑 実行許可リクエストなのです: ${tool}`,
+      text: Msg('approval.requestText', { tool }),
       blocks: [
         {
           type: 'header',
           text: {
             type: 'plain_text',
-            text: '🍑 すももからの実行許可リクエストであります！',
+            text: Msg('approval.requestHeader'),
             emoji: true,
           },
         },
@@ -1479,13 +1480,13 @@ export async function AskQuestion(
     void app.client.chat.postMessage({
       channel: channelId,
       thread_ts: threadTs,
-      text: `🍑 お聞きしたいことがあるのです: ${question}`,
+      text: Msg('question.text', { question }),
       blocks: [
         {
           type: 'header',
           text: {
             type: 'plain_text',
-            text: '🍑 すももからの質問なのでーす！',
+            text: Msg('question.header'),
             emoji: true,
           },
         },
@@ -1519,13 +1520,13 @@ export async function CreateIssueThread(
 ): Promise<string> {
   const result = await app.client.chat.postMessage({
     channel: channelId,
-    text: `🍑 あいっ！GitHub Issue の処理を開始するのでーす！`,
+    text: Msg('issue.startText'),
     blocks: [
       {
         type: 'header',
         text: {
           type: 'plain_text',
-          text: '🍑 GitHub Issue 処理開始であります！',
+          text: Msg('issue.startHeader'),
           emoji: true,
         },
       },
@@ -1541,7 +1542,7 @@ export async function CreateIssueThread(
         elements: [
           {
             type: 'mrkdwn',
-            text: '処理の進捗はこのスレッドに投稿するのです！お楽しみに〜♪',
+            text: Msg('issue.threadContext'),
           },
         ],
       },
@@ -1563,7 +1564,7 @@ export async function NotifyTaskStarted(
 ): Promise<string> {
   const result = await app.client.chat.postMessage({
     channel: channelId,
-    text: `🍑 了解であります！処理を開始するのでーす: ${description}`,
+    text: Msg('task.started', { description }),
     thread_ts: threadTs,
   });
   return result.ts ?? '';
@@ -1580,9 +1581,9 @@ export async function NotifyTaskCompleted(
   prUrl?: string,
   threadTs?: string
 ): Promise<void> {
-  let text = `🍑 任務完了であります！${message}`;
+  let text = Msg('task.completed', { message });
   if (prUrl) {
-    text += `\nPRを作成したのでーす: ${prUrl}`;
+    text += Msg('task.completedPr', { prUrl });
   }
 
   await app.client.chat.postMessage({
@@ -1604,7 +1605,7 @@ export async function NotifyError(
 ): Promise<void> {
   await app.client.chat.postMessage({
     channel: channelId,
-    text: `🍑 あわわ…エラーが発生してしまったのです…: ${error}`,
+    text: Msg('task.error', { error }),
     thread_ts: threadTs,
   });
 }
@@ -1620,7 +1621,7 @@ export async function NotifyProgress(
 ): Promise<void> {
   await app.client.chat.postMessage({
     channel: channelId,
-    text: `🍑 ${message}`,
+    text: Msg('task.progress', { message }),
     thread_ts: threadTs,
   });
 }

@@ -13,7 +13,8 @@ import type {
 } from '../types/index.js';
 import { GetHistoryStore } from '../history/store.js';
 import { GetReflectionStore } from './store.js';
-import { GetClaudeRunner, SUMOMO_SYSTEM_PROMPT } from '../claude/runner.js';
+import { GetClaudeRunner } from '../claude/runner.js';
+import { LoadCharacterPrompt } from '../character.js';
 import { GetWorkspacePath } from '../git/repo.js';
 
 // 内省処理中かどうかの参照（index.tsの_isProcessingを参照するために外部から注入）
@@ -195,7 +196,7 @@ export async function RunReflection(
       const prompt = BuildReflectionPrompt(userId, records, repos);
 
       // 内省専用のシステムプロンプト
-      const systemPrompt = `${SUMOMO_SYSTEM_PROMPT}
+      const systemPrompt = `${LoadCharacterPrompt()}
 
 あなたは今、日次内省モードです。ユーザーの作業履歴を分析し、改善提案を生成してください。
 出力は必ずJSON形式で行ってください。日本語で記述してください。`;
