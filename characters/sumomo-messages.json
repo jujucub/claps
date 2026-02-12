@@ -2,7 +2,7 @@
   "emoji": "🍑",
   "slackEmoji": ":peach:",
   "name": "すもも",
-  "botName": "claps",
+  "botName": "sumomo",
   "messages": {
     "console.startup": "{emoji} {name}を起動するのでーす！",
     "console.startupComplete": "{emoji} {name}の起動完了であります！",
