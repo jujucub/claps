@@ -3,9 +3,16 @@
  * Slackスレッド/GitHub IssueとClaudeセッションIDを管理する
  */
 
+// セッション取得時の戻り値型
+export interface SessionResult {
+  readonly sessionId: string;
+  readonly workingDirectory?: string;
+}
+
 // セッション情報
 interface SessionInfo {
   readonly sessionId: string;
+  readonly workingDirectory?: string;
   readonly createdAt: Date;
   lastUsedAt: Date;
 }
@@ -55,7 +62,7 @@ class SessionStore {
   /**
    * キーからセッションを取得（共通処理）
    */
-  private _getByKey(key: SessionKey): string | undefined {
+  private _getByKey(key: SessionKey): SessionResult | undefined {
     const session = this._sessions.get(key);
 
     if (!session) {
@@ -71,26 +78,30 @@ class SessionStore {
 
     // 最終使用時刻を更新
     session.lastUsedAt = new Date();
-    return session.sessionId;
+    return {
+      sessionId: session.sessionId,
+      workingDirectory: session.workingDirectory,
+    };
   }
 
   /**
    * キーにセッションを保存（共通処理）
    */
-  private _setByKey(key: SessionKey, sessionId: string): void {
+  private _setByKey(key: SessionKey, sessionId: string, workingDirectory?: string): void {
     const now = new Date();
     this._sessions.set(key, {
       sessionId,
+      workingDirectory,
       createdAt: now,
       lastUsedAt: now,
     });
-    console.log(`Session stored: ${key} -> ${sessionId}`);
+    console.log(`Session stored: ${key} -> ${sessionId}${workingDirectory ? ` (dir: ${workingDirectory})` : ''}`);
   }
 
   /**
    * Slackスレッドのセッションを取得
    */
-  Get(threadTs: string, userId: string): string | undefined {
+  Get(threadTs: string, userId: string): SessionResult | undefined {
     const key = this._makeSlackKey(threadTs, userId);
     return this._getByKey(key);
   }
@@ -98,9 +109,9 @@ class SessionStore {
   /**
    * Slackスレッドのセッションを保存
    */
-  Set(threadTs: string, userId: string, sessionId: string): void {
+  Set(threadTs: string, userId: string, sessionId: string, workingDirectory?: string): void {
     const key = this._makeSlackKey(threadTs, userId);
-    this._setByKey(key, sessionId);
+    this._setByKey(key, sessionId, workingDirectory);
   }
 
   /**
@@ -114,7 +125,7 @@ class SessionStore {
   /**
    * GitHub Issueのセッションを取得
    */
-  GetForIssue(owner: string, repo: string, issueNumber: number): string | undefined {
+  GetForIssue(owner: string, repo: string, issueNumber: number): SessionResult | undefined {
     const key = this._makeGitHubKey(owner, repo, issueNumber);
     return this._getByKey(key);
   }
@@ -122,9 +133,9 @@ class SessionStore {
   /**
    * GitHub Issueのセッションを保存
    */
-  SetForIssue(owner: string, repo: string, issueNumber: number, sessionId: string): void {
+  SetForIssue(owner: string, repo: string, issueNumber: number, sessionId: string, workingDirectory?: string): void {
     const key = this._makeGitHubKey(owner, repo, issueNumber);
-    this._setByKey(key, sessionId);
+    this._setByKey(key, sessionId, workingDirectory);
   }
 
   /**

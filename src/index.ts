@@ -280,7 +280,8 @@ async function ProcessNextTask(): Promise<void> {
         } else {
         // 通常のSlackタスク
         // 同じスレッドの既存セッションを取得
-        const existingSessionId = sessionStore.Get(slackMeta.threadTs, slackMeta.userId);
+        const existingSession = sessionStore.Get(slackMeta.threadTs, slackMeta.userId);
+        const existingSessionId = existingSession?.sessionId;
         if (existingSessionId) {
           console.log(`Resuming existing session for thread ${slackMeta.threadTs}: ${existingSessionId}`);
         } else {
@@ -297,8 +298,9 @@ async function ProcessNextTask(): Promise<void> {
           _config.githubRepos
         );
 
+        const workingDirectory = existingSession?.workingDirectory ?? GetWorkspacePath();
         const runResult = await _claudeRunner.Run(task.id, promptWithContext, {
-          workingDirectory: GetWorkspacePath(),
+          workingDirectory,
           onWorkLog,
           resumeSessionId: existingSessionId,
           approvalServerPort: _config.approvalServerPort,
@@ -306,7 +308,7 @@ async function ProcessNextTask(): Promise<void> {
 
         // 新しいセッションIDが返された場合は保存
         if (runResult.sessionId) {
-          sessionStore.Set(slackMeta.threadTs, slackMeta.userId, runResult.sessionId);
+          sessionStore.Set(slackMeta.threadTs, slackMeta.userId, runResult.sessionId, workingDirectory);
           console.log(`Session saved for thread ${slackMeta.threadTs}: ${runResult.sessionId}`);
         }
 
@@ -391,11 +393,12 @@ async function ProcessSlackAsIssueTask(
     }
 
     // Issueのセッションを取得
-    const existingSessionId = sessionStore.GetForIssue(
+    const existingSession = sessionStore.GetForIssue(
       issueInfo.owner,
       issueInfo.repo,
       issueInfo.issueNumber
     );
+    const existingSessionId = existingSession?.sessionId;
     if (existingSessionId) {
       console.log(`Resuming issue session: ${existingSessionId}`);
     } else {
@@ -421,7 +424,7 @@ async function ProcessSlackAsIssueTask(
 
     // セッションIDを保存
     if (runResult.sessionId) {
-      sessionStore.SetForIssue(issueInfo.owner, issueInfo.repo, issueInfo.issueNumber, runResult.sessionId);
+      sessionStore.SetForIssue(issueInfo.owner, issueInfo.repo, issueInfo.issueNumber, runResult.sessionId, worktreeInfo.worktreePath);
     }
 
     // 変更があればコミット＆プッシュ
@@ -510,7 +513,8 @@ async function ProcessSlackWithTargetRepo(
     }
 
     // セッションを取得（スレッド+ユーザー単位）
-    const existingSessionId = sessionStore.Get(slackMeta.threadTs, slackMeta.userId);
+    const existingSession = sessionStore.Get(slackMeta.threadTs, slackMeta.userId);
+    const existingSessionId = existingSession?.sessionId;
     if (existingSessionId) {
       console.log(`Resuming existing session: ${existingSessionId}`);
     } else {
@@ -537,7 +541,7 @@ async function ProcessSlackWithTargetRepo(
 
     // セッションIDを保存（同じスレッドでの次回メッセージで再開するため）
     if (runResult.sessionId) {
-      sessionStore.Set(slackMeta.threadTs, slackMeta.userId, runResult.sessionId);
+      sessionStore.Set(slackMeta.threadTs, slackMeta.userId, runResult.sessionId, worktreeInfo.worktreePath);
       console.log(`Session saved for thread ${slackMeta.threadTs}: ${runResult.sessionId}`);
     }
 
@@ -605,7 +609,8 @@ async function ProcessGitHubTask(
     }
 
     // 同じIssueの既存セッションを取得
-    const existingSessionId = sessionStore.GetForIssue(meta.owner, meta.repo, meta.issueNumber);
+    const existingSession = sessionStore.GetForIssue(meta.owner, meta.repo, meta.issueNumber);
+    const existingSessionId = existingSession?.sessionId;
     if (existingSessionId) {
       console.log(`Resuming existing session for issue #${meta.issueNumber}: ${existingSessionId}`);
       await NotifyProgress(
@@ -639,7 +644,7 @@ async function ProcessGitHubTask(
 
     // セッションIDを保存
     if (runResult.sessionId) {
-      sessionStore.SetForIssue(meta.owner, meta.repo, meta.issueNumber, runResult.sessionId);
+      sessionStore.SetForIssue(meta.owner, meta.repo, meta.issueNumber, runResult.sessionId, worktreeInfo.worktreePath);
     }
 
     // Claude CLIの結果をそのまま返す（コミット・PR作成はLLMが判断して実行）
