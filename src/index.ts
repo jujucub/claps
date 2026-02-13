@@ -535,6 +535,12 @@ async function ProcessSlackWithTargetRepo(
       approvalServerPort: _config.approvalServerPort,
     });
 
+    // セッションIDを保存（同じスレッドでの次回メッセージで再開するため）
+    if (runResult.sessionId) {
+      sessionStore.Set(slackMeta.threadTs, slackMeta.userId, runResult.sessionId);
+      console.log(`Session saved for thread ${slackMeta.threadTs}: ${runResult.sessionId}`);
+    }
+
     return {
       success: runResult.success,
       output: runResult.output,
