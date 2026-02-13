@@ -1,7 +1,12 @@
 /**
  * claps - セッションストア
  * Slackスレッド/GitHub IssueとClaudeセッションIDを管理する
+ * ~/.claps/sessions.json に永続化してプロセス再起動に対応する
  */
+
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 
 // セッション取得時の戻り値型
 export interface SessionResult {
@@ -29,6 +34,24 @@ interface IssueInfo {
 // GitHub: github:{owner}/{repo}#{issueNumber}
 type SessionKey = string;
 
+// 永続化用のシリアライズ形式
+interface SerializedSessionInfo {
+  readonly sessionId: string;
+  readonly workingDirectory?: string;
+  readonly createdAt: string;
+  readonly lastUsedAt: string;
+}
+
+interface SerializedStore {
+  readonly sessions: Record<string, SerializedSessionInfo>;
+  readonly threadToIssue: Record<string, IssueInfo>;
+  readonly threadToTargetRepo: Record<string, string>;
+}
+
+// 永続化ファイルパス
+const SESSIONS_DIR = path.join(os.homedir(), '.claps');
+const SESSIONS_FILE = path.join(SESSIONS_DIR, 'sessions.json');
+
 /**
  * セッションストアクラス
  */
@@ -43,6 +66,86 @@ class SessionStore {
     this._threadToIssue = new Map();
     this._threadToTargetRepo = new Map();
     this._maxAge = maxAgeHours * 60 * 60 * 1000;
+    this._load();
+  }
+
+  /**
+   * ファイルからセッションデータを読み込む
+   */
+  private _load(): void {
+    try {
+      if (!fs.existsSync(SESSIONS_FILE)) {
+        return;
+      }
+
+      const data = fs.readFileSync(SESSIONS_FILE, 'utf-8');
+      const parsed = JSON.parse(data) as Partial<SerializedStore>;
+      const now = Date.now();
+
+      // セッションを復元（期限切れは除外）
+      if (parsed.sessions && typeof parsed.sessions === 'object') {
+        for (const [key, info] of Object.entries(parsed.sessions)) {
+          const lastUsedAt = new Date(info.lastUsedAt);
+          if (now - lastUsedAt.getTime() <= this._maxAge) {
+            this._sessions.set(key, {
+              sessionId: info.sessionId,
+              workingDirectory: info.workingDirectory,
+              createdAt: new Date(info.createdAt),
+              lastUsedAt,
+            });
+          }
+        }
+      }
+
+      // スレッド→Issue紐付けを復元
+      if (parsed.threadToIssue && typeof parsed.threadToIssue === 'object') {
+        for (const [threadTs, issueInfo] of Object.entries(parsed.threadToIssue)) {
+          this._threadToIssue.set(threadTs, issueInfo);
+        }
+      }
+
+      // スレッド→ターゲットリポジトリ紐付けを復元
+      if (parsed.threadToTargetRepo && typeof parsed.threadToTargetRepo === 'object') {
+        for (const [threadTs, targetRepo] of Object.entries(parsed.threadToTargetRepo)) {
+          this._threadToTargetRepo.set(threadTs, targetRepo);
+        }
+      }
+
+      console.log(`Sessions loaded: ${this._sessions.size} sessions, ${this._threadToIssue.size} issue links, ${this._threadToTargetRepo.size} repo links`);
+    } catch (error) {
+      console.error('Failed to load sessions:', error);
+    }
+  }
+
+  /**
+   * セッションデータをファイルに保存する
+   */
+  private _save(): void {
+    try {
+      if (!fs.existsSync(SESSIONS_DIR)) {
+        fs.mkdirSync(SESSIONS_DIR, { recursive: true, mode: 0o700 });
+      }
+
+      const serialized: SerializedStore = {
+        sessions: Object.fromEntries(
+          Array.from(this._sessions.entries()).map(([key, info]) => [
+            key,
+            {
+              sessionId: info.sessionId,
+              workingDirectory: info.workingDirectory,
+              createdAt: info.createdAt.toISOString(),
+              lastUsedAt: info.lastUsedAt.toISOString(),
+            },
+          ])
+        ),
+        threadToIssue: Object.fromEntries(this._threadToIssue),
+        threadToTargetRepo: Object.fromEntries(this._threadToTargetRepo),
+      };
+
+      fs.writeFileSync(SESSIONS_FILE, JSON.stringify(serialized, null, 2), { mode: 0o600 });
+    } catch (error) {
+      console.error('Failed to save sessions:', error);
+    }
   }
 
   /**
@@ -73,11 +176,13 @@ class SessionStore {
     const now = Date.now();
     if (now - session.lastUsedAt.getTime() > this._maxAge) {
       this._sessions.delete(key);
+      this._save();
       return undefined;
     }
 
     // 最終使用時刻を更新
     session.lastUsedAt = new Date();
+    this._save();
     return {
       sessionId: session.sessionId,
       workingDirectory: session.workingDirectory,
@@ -96,6 +201,7 @@ class SessionStore {
       lastUsedAt: now,
     });
     console.log(`Session stored: ${key} -> ${sessionId}${workingDirectory ? ` (dir: ${workingDirectory})` : ''}`);
+    this._save();
   }
 
   /**
@@ -119,7 +225,11 @@ class SessionStore {
    */
   Delete(threadTs: string, userId: string): boolean {
     const key = this._makeSlackKey(threadTs, userId);
-    return this._sessions.delete(key);
+    const result = this._sessions.delete(key);
+    if (result) {
+      this._save();
+    }
+    return result;
   }
 
   /**
@@ -143,7 +253,11 @@ class SessionStore {
    */
   DeleteForIssue(owner: string, repo: string, issueNumber: number): boolean {
     const key = this._makeGitHubKey(owner, repo, issueNumber);
-    return this._sessions.delete(key);
+    const result = this._sessions.delete(key);
+    if (result) {
+      this._save();
+    }
+    return result;
   }
 
   /**
@@ -152,6 +266,7 @@ class SessionStore {
   LinkThreadToIssue(threadTs: string, owner: string, repo: string, issueNumber: number): void {
     this._threadToIssue.set(threadTs, { owner, repo, issueNumber });
     console.log(`Thread ${threadTs} linked to issue ${owner}/${repo}#${issueNumber}`);
+    this._save();
   }
 
   /**
@@ -169,6 +284,7 @@ class SessionStore {
       if (info.owner === owner && info.repo === repo && info.issueNumber === issueNumber) {
         this._threadToIssue.delete(threadTs);
         console.log(`Thread ${threadTs} unlinked from issue ${owner}/${repo}#${issueNumber}`);
+        this._save();
         break;
       }
     }
@@ -180,6 +296,7 @@ class SessionStore {
   LinkThreadToTargetRepo(threadTs: string, targetRepo: string): void {
     this._threadToTargetRepo.set(threadTs, targetRepo);
     console.log(`Thread ${threadTs} linked to target repo ${targetRepo}`);
+    this._save();
   }
 
   /**
@@ -205,6 +322,7 @@ class SessionStore {
 
     if (cleaned > 0) {
       console.log(`Cleaned up ${cleaned} expired sessions`);
+      this._save();
     }
 
     return cleaned;
@@ -215,6 +333,7 @@ class SessionStore {
    */
   Clear(): void {
     this._sessions.clear();
+    this._save();
   }
 
   /**

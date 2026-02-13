@@ -532,8 +532,10 @@ async function ProcessSlackWithTargetRepo(
       worktreeInfo.branchName
     );
 
+    // セッション再開時は既存の作業ディレクトリを使用し、新規時はworktreeパスを使用
+    const workingDirectory = existingSession?.workingDirectory ?? worktreeInfo.worktreePath;
     const runResult = await _claudeRunner.Run(task.id, promptWithContext, {
-      workingDirectory: worktreeInfo.worktreePath,
+      workingDirectory,
       onWorkLog,
       resumeSessionId: existingSessionId,
       approvalServerPort: _config.approvalServerPort,
@@ -541,7 +543,7 @@ async function ProcessSlackWithTargetRepo(
 
     // セッションIDを保存（同じスレッドでの次回メッセージで再開するため）
     if (runResult.sessionId) {
-      sessionStore.Set(slackMeta.threadTs, slackMeta.userId, runResult.sessionId, worktreeInfo.worktreePath);
+      sessionStore.Set(slackMeta.threadTs, slackMeta.userId, runResult.sessionId, workingDirectory);
       console.log(`Session saved for thread ${slackMeta.threadTs}: ${runResult.sessionId}`);
     }
 
