@@ -4,7 +4,7 @@
  */
 
 import { LoadConfig } from './config.js';
-import type { Config, GitHubTaskMetadata, SlackTaskMetadata, LineTaskMetadata, TaskMetadata, Task } from './types/index.js';
+import type { Config, GitHubTaskMetadata, SlackTaskMetadata, LineTaskMetadata, HttpTaskMetadata, TaskMetadata, Task } from './types/index.js';
 import { GetTaskQueue, type TaskQueue } from './queue/taskQueue.js';
 import { GetClaudeRunner, type ClaudeRunner, type WorkLog } from './claude/runner.js';
 import { GetSessionStore } from './session/store.js';
@@ -49,6 +49,7 @@ import { AdapterRegistry } from './channel/registry.js';
 import { NotificationRouter } from './channel/router.js';
 import { SlackAdapter } from './slack/adapter.js';
 import { LineAdapter } from './line/adapter.js';
+import { HttpAdapter } from './http/adapter.js';
 
 // 作業ログの投稿間隔（ミリ秒）
 const WORK_LOG_INTERVAL_MS = 10000;
@@ -99,10 +100,23 @@ async function Start(): Promise<void> {
     console.log('LINE adapter registered (channel token present)');
   }
 
-  // 全アダプタを初期化・起動
+  // HTTP アダプタを条件付きで登録
+  if (_config.channelConfig.http) {
+    const httpAdapter = new HttpAdapter(_config, _registry);
+    _registry.register(httpAdapter);
+    console.log('HTTP adapter registered (HTTP_CHANNEL_ENABLED=true)');
+  }
+
+  // 全アダプタを初期化（SDK初期化、コールバック登録）
   await _registry.initAll({
     onMessage: HandleChannelMessage,
   });
+
+  // 承認サーバーを初期化・起動（HTTP アダプタがルートをマウントする前に必要）
+  InitApprovalServer(_router);
+  await StartApprovalServer(_config.approvalServerPort);
+
+  // 全アダプタを起動（HTTP アダプタは承認サーバーの Express にマウントする場合がある）
   await _registry.startAll();
 
   // Slackアダプタが正常起動したことを検証（起動失敗は致命的）
@@ -110,10 +124,6 @@ async function Start(): Promise<void> {
   if (slackHealth.status !== 'healthy') {
     throw new Error('Slack adapter failed to start - cannot continue without Slack');
   }
-
-  // 承認サーバーを初期化・起動（ルーター経由）
-  InitApprovalServer(_router);
-  await StartApprovalServer(_config.approvalServerPort);
 
   // GitHub Poller を初期化・開始
   InitGitHubPoller(_config);
@@ -330,9 +340,12 @@ async function ProcessNextTask(): Promise<void> {
     } else if (task.metadata.source === 'line') {
       // LINE の場合
       result = await ProcessLineTask(task);
+    } else if (task.metadata.source === 'http') {
+      // HTTP (M5 Stack等) の場合
+      result = await ProcessHttpTask(task);
     } else {
-      // 将来の HTTP タスク処理（US3で実装）
-      result = { success: false, output: '', error: `Unsupported task source: ${task.metadata.source}` };
+      const _exhaustiveCheck: never = task.metadata;
+      result = { success: false, output: '', error: `Unsupported task source: ${(_exhaustiveCheck as TaskMetadata).source}` };
     }
 
     // タスクを完了としてマーク
@@ -665,6 +678,89 @@ async function ProcessLineTask(
 }
 
 /**
+ * HTTP タスクを処理する（汎用ワークスペースでセッション継続）
+ */
+async function ProcessHttpTask(
+  task: Task
+): Promise<{ success: boolean; output: string; prUrl?: string; error?: string }> {
+  if (!_config || !_claudeRunner || !_router) {
+    return { success: false, output: '', error: 'Not initialized' };
+  }
+
+  const httpMeta = task.metadata as HttpTaskMetadata;
+  const sessionStore = GetSessionStore();
+
+  try {
+    // targetRepo が指定されている場合はそのリポジトリの worktree で作業
+    if (httpMeta.targetRepo) {
+      const parts = httpMeta.targetRepo.split('/');
+      const owner = parts[0] as string;
+      const repo = parts[1] as string;
+
+      const repoPath = await GetOrCloneRepo(owner, repo, _config.githubToken);
+      const worktreeIdentifier = Date.now();
+      const { worktreeInfo } = await GetOrCreateWorktree(repoPath, owner, repo, worktreeIdentifier);
+
+      await _router.notifyProgress(task.id, task.metadata, `Branch: ${worktreeInfo.branchName}`);
+
+      const existingSession = sessionStore.GetForHttp(httpMeta.correlationId);
+      const existingSessionId = existingSession?.sessionId;
+
+      const onWorkLog = CreateWorkLogCallback(task);
+      const promptWithContext = task.prompt + BuildHttpContext(httpMeta, _config.githubRepos, httpMeta.targetRepo, worktreeInfo.branchName);
+      const workingDirectory = existingSession?.workingDirectory ?? worktreeInfo.worktreePath;
+
+      const runResult = await _claudeRunner.Run(task.id, promptWithContext, {
+        workingDirectory,
+        onWorkLog,
+        resumeSessionId: existingSessionId,
+        approvalServerPort: _config.approvalServerPort,
+      });
+
+      if (runResult.sessionId) {
+        sessionStore.SetForHttp(httpMeta.correlationId, runResult.sessionId, workingDirectory);
+      }
+
+      return {
+        success: runResult.success,
+        output: runResult.output,
+        prUrl: runResult.prUrl,
+        error: runResult.error,
+      };
+    }
+
+    // targetRepo なし: 汎用ワークスペースで実行
+    const existingSession = sessionStore.GetForHttp(httpMeta.correlationId);
+    const existingSessionId = existingSession?.sessionId;
+
+    const onWorkLog = CreateWorkLogCallback(task);
+    const promptWithContext = task.prompt + BuildHttpContext(httpMeta, _config.githubRepos);
+    const workingDirectory = existingSession?.workingDirectory ?? GetWorkspacePath();
+
+    const runResult = await _claudeRunner.Run(task.id, promptWithContext, {
+      workingDirectory,
+      onWorkLog,
+      resumeSessionId: existingSessionId,
+      approvalServerPort: _config.approvalServerPort,
+    });
+
+    if (runResult.sessionId) {
+      sessionStore.SetForHttp(httpMeta.correlationId, runResult.sessionId, workingDirectory);
+    }
+
+    return runResult;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`ProcessHttpTask error: ${errorMessage}`);
+    return {
+      success: false,
+      output: '',
+      error: errorMessage,
+    };
+  }
+}
+
+/**
  * GitHub Issue タスクを worktree で処理する（セッション継続対応）
  */
 async function ProcessGitHubTask(
@@ -836,6 +932,11 @@ function GetRequestedByUserId(task: Task): string | undefined {
     return (task.metadata as LineTaskMetadata).userId;
   }
 
+  if (task.metadata.source === 'http') {
+    // HTTPからのリクエストは deviceId（承認は HTTP アダプタ経由で処理）
+    return (task.metadata as HttpTaskMetadata).deviceId;
+  }
+
   return undefined;
 }
 
@@ -934,6 +1035,42 @@ function BuildLineContext(
 LINEコンテキスト情報:
 - ソース: LINE Bot
 - User ID: ${meta.userId}
+
+監視対象GitHubリポジトリ:
+${reposList}`;
+
+  if (targetRepo && branchName) {
+    context += `
+
+作業リポジトリ:
+- リポジトリ: ${targetRepo}
+- 作業ブランチ: ${branchName}
+
+目標:
+- リクエストされた内容を実装してください
+- 実装が完了したら、コミットしてPull Requestを作成してください`;
+  }
+
+  context += '\n---';
+  return context;
+}
+
+/**
+ * HTTPコンテキスト情報をプロンプトに追加する
+ */
+function BuildHttpContext(
+  meta: HttpTaskMetadata,
+  githubRepos: readonly string[],
+  targetRepo?: string,
+  branchName?: string
+): string {
+  const reposList = githubRepos.map(repo => `  - ${repo}`).join('\n');
+  let context = `
+---
+HTTPコンテキスト情報:
+- ソース: HTTP API
+- Correlation ID: ${meta.correlationId}
+${meta.deviceId ? `- Device ID: ${meta.deviceId}` : ''}
 
 監視対象GitHubリポジトリ:
 ${reposList}`;

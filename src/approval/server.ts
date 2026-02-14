@@ -54,6 +54,12 @@ function AuthMiddleware(req: Request, res: Response, next: NextFunction): void {
     return;
   }
 
+  // /api/v1/ 配下は HTTP アダプタ側の認証ミドルウェアに委譲
+  if (req.path.startsWith('/api/v1/')) {
+    next();
+    return;
+  }
+
   const token = req.headers['x-auth-token'] as string | undefined;
 
   if (!token || !_authToken) {
