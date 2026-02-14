@@ -4,7 +4,7 @@
  */
 
 import { LoadConfig } from './config.js';
-import type { Config, GitHubTaskMetadata, SlackTaskMetadata, TaskMetadata, Task } from './types/index.js';
+import type { Config, GitHubTaskMetadata, SlackTaskMetadata, LineTaskMetadata, TaskMetadata, Task } from './types/index.js';
 import { GetTaskQueue, type TaskQueue } from './queue/taskQueue.js';
 import { GetClaudeRunner, type ClaudeRunner, type WorkLog } from './claude/runner.js';
 import { GetSessionStore } from './session/store.js';
@@ -48,6 +48,7 @@ import { Msg } from './messages.js';
 import { AdapterRegistry } from './channel/registry.js';
 import { NotificationRouter } from './channel/router.js';
 import { SlackAdapter } from './slack/adapter.js';
+import { LineAdapter } from './line/adapter.js';
 
 // 作業ログの投稿間隔（ミリ秒）
 const WORK_LOG_INTERVAL_MS = 10000;
@@ -90,6 +91,13 @@ async function Start(): Promise<void> {
   // Slack アダプタを登録（常に有効）
   const slackAdapter = new SlackAdapter(_config);
   _registry.register(slackAdapter);
+
+  // LINE アダプタを条件付きで登録
+  if (_config.channelConfig.line) {
+    const lineAdapter = new LineAdapter(_config);
+    _registry.register(lineAdapter);
+    console.log('LINE adapter registered (channel token present)');
+  }
 
   // 全アダプタを初期化・起動
   await _registry.initAll({
@@ -319,8 +327,11 @@ async function ProcessNextTask(): Promise<void> {
         result = runResult;
         }
       }
+    } else if (task.metadata.source === 'line') {
+      // LINE の場合
+      result = await ProcessLineTask(task);
     } else {
-      // 将来の LINE / HTTP タスク処理（US2, US3で実装）
+      // 将来の HTTP タスク処理（US3で実装）
       result = { success: false, output: '', error: `Unsupported task source: ${task.metadata.source}` };
     }
 
@@ -560,6 +571,100 @@ async function ProcessSlackWithTargetRepo(
 }
 
 /**
+ * LINE タスクを処理する（汎用ワークスペースでセッション継続）
+ */
+async function ProcessLineTask(
+  task: Task
+): Promise<{ success: boolean; output: string; prUrl?: string; error?: string }> {
+  if (!_config || !_claudeRunner || !_router) {
+    return { success: false, output: '', error: 'Not initialized' };
+  }
+
+  const lineMeta = task.metadata as LineTaskMetadata;
+  const sessionStore = GetSessionStore();
+
+  try {
+    // targetRepo が指定されている場合はそのリポジトリの worktree で作業
+    if (lineMeta.targetRepo) {
+      const parts = lineMeta.targetRepo.split('/');
+      const owner = parts[0] as string;
+      const repo = parts[1] as string;
+
+      const repoPath = await GetOrCloneRepo(owner, repo, _config.githubToken);
+      const worktreeIdentifier = Date.now();
+      const { worktreeInfo } = await GetOrCreateWorktree(repoPath, owner, repo, worktreeIdentifier);
+
+      await _router.notifyProgress(
+        task.id,
+        task.metadata,
+        `ブランチ \`${worktreeInfo.branchName}\` で作業を開始いたしますわ`
+      );
+
+      // セッションを取得（LINE userId でルックアップ）
+      const existingSession = sessionStore.GetForLine(lineMeta.userId);
+      const existingSessionId = existingSession?.sessionId;
+
+      const onWorkLog = CreateWorkLogCallback(task);
+      const promptWithContext = task.prompt + BuildLineContext(lineMeta, _config.githubRepos, lineMeta.targetRepo, worktreeInfo.branchName);
+      const workingDirectory = existingSession?.workingDirectory ?? worktreeInfo.worktreePath;
+
+      const runResult = await _claudeRunner.Run(task.id, promptWithContext, {
+        workingDirectory,
+        onWorkLog,
+        resumeSessionId: existingSessionId,
+        approvalServerPort: _config.approvalServerPort,
+      });
+
+      if (runResult.sessionId) {
+        sessionStore.SetForLine(lineMeta.userId, runResult.sessionId, workingDirectory);
+      }
+
+      return {
+        success: runResult.success,
+        output: runResult.output,
+        prUrl: runResult.prUrl,
+        error: runResult.error,
+      };
+    }
+
+    // targetRepo なし: 汎用ワークスペースで実行
+    const existingSession = sessionStore.GetForLine(lineMeta.userId);
+    const existingSessionId = existingSession?.sessionId;
+    if (existingSessionId) {
+      console.log(`Resuming LINE session for ${lineMeta.userId}: ${existingSessionId}`);
+    } else {
+      console.log(`Creating new LINE session for ${lineMeta.userId}`);
+    }
+
+    const onWorkLog = CreateWorkLogCallback(task);
+    const promptWithContext = task.prompt + BuildLineContext(lineMeta, _config.githubRepos);
+    const workingDirectory = existingSession?.workingDirectory ?? GetWorkspacePath();
+
+    const runResult = await _claudeRunner.Run(task.id, promptWithContext, {
+      workingDirectory,
+      onWorkLog,
+      resumeSessionId: existingSessionId,
+      approvalServerPort: _config.approvalServerPort,
+    });
+
+    if (runResult.sessionId) {
+      sessionStore.SetForLine(lineMeta.userId, runResult.sessionId, workingDirectory);
+      console.log(`LINE session saved for ${lineMeta.userId}: ${runResult.sessionId}`);
+    }
+
+    return runResult;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`ProcessLineTask error: ${errorMessage}`);
+    return {
+      success: false,
+      output: '',
+      error: errorMessage,
+    };
+  }
+}
+
+/**
  * GitHub Issue タスクを worktree で処理する（セッション継続対応）
  */
 async function ProcessGitHubTask(
@@ -726,6 +831,11 @@ function GetRequestedByUserId(task: Task): string | undefined {
     return GetAdminSlackUser();
   }
 
+  if (task.metadata.source === 'line') {
+    // LINEからのリクエストは LINE userId（承認は LINE アダプタ経由で処理）
+    return (task.metadata as LineTaskMetadata).userId;
+  }
+
   return undefined;
 }
 
@@ -807,6 +917,41 @@ ${slackThreadTs ? `- Thread TS: ${slackThreadTs}` : ''}
 - 実装が完了したら、コミットしてPull Requestを作成してください
 - PRのタイトルには Issue番号を含めてください（例: fix: #${meta.issueNumber} - 説明）
 ---`;
+}
+
+/**
+ * LINEコンテキスト情報をプロンプトに追加する
+ */
+function BuildLineContext(
+  meta: LineTaskMetadata,
+  githubRepos: readonly string[],
+  targetRepo?: string,
+  branchName?: string
+): string {
+  const reposList = githubRepos.map(repo => `  - ${repo}`).join('\n');
+  let context = `
+---
+LINEコンテキスト情報:
+- ソース: LINE Bot
+- User ID: ${meta.userId}
+
+監視対象GitHubリポジトリ:
+${reposList}`;
+
+  if (targetRepo && branchName) {
+    context += `
+
+作業リポジトリ:
+- リポジトリ: ${targetRepo}
+- 作業ブランチ: ${branchName}
+
+目標:
+- リクエストされた内容を実装してください
+- 実装が完了したら、コミットしてPull Requestを作成してください`;
+  }
+
+  context += '\n---';
+  return context;
 }
 
 /**
