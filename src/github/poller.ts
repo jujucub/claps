@@ -35,7 +35,7 @@ const _processedIssues = new Set<string>();
  */
 export function UpdateAllowedUsers(githubUsers: readonly string[]): void {
   if (!_allowedUsers) {
-    _allowedUsers = { github: githubUsers, slack: [] };
+    _allowedUsers = { github: githubUsers, slack: [], line: [], http: [] };
   } else {
     _allowedUsers = {
       ..._allowedUsers,

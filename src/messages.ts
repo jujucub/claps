@@ -205,6 +205,29 @@ export function Msg(key: string, vars?: Readonly<Record<string, string>>): strin
 }
 
 /**
+ * プレーンテキスト用メッセージを取得する
+ * Slack絵文字（:coffee:等）をUnicode絵文字に置換した版
+ * LINE / HTTP など Slack以外のチャネルで使用する
+ */
+export function PlainMsg(key: string, vars?: Readonly<Record<string, string>>): string {
+  const config = LoadMessageConfig();
+
+  const template = config.messages[key] ?? DEFAULT_MESSAGES[key] ?? key;
+
+  // slackEmoji の代わりに emoji を使う
+  const builtinVars: Record<string, string> = {
+    emoji: config.emoji,
+    slackEmoji: config.emoji, // Slack絵文字をUnicodeに置換
+    name: config.name,
+    botName: config.botName,
+  };
+
+  return template.replace(/\{(\w+)\}/g, (match, varName: string) => {
+    return vars?.[varName] ?? builtinVars[varName] ?? match;
+  });
+}
+
+/**
  * ボット名を取得する（スラッシュコマンド、メンション、タグ等に使用）
  */
 export function GetBotName(): string {

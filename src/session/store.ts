@@ -7,6 +7,7 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import type { TaskSource, UserMapping } from '../types/index.js';
 
 // セッション取得時の戻り値型
 export interface SessionResult {
@@ -304,6 +305,106 @@ class SessionStore {
    */
   GetTargetRepoForThread(threadTs: string): string | undefined {
     return this._threadToTargetRepo.get(threadTs);
+  }
+
+  // --- チャネル横断セッション ---
+
+  /**
+   * 正規ユーザーID用のキーを生成
+   */
+  private _makeUserKey(canonicalUserId: string, targetRepo?: string): SessionKey {
+    return targetRepo
+      ? `user:${canonicalUserId}:${targetRepo}`
+      : `user:${canonicalUserId}`;
+  }
+
+  /**
+   * LINE用のキーを生成
+   */
+  private _makeLineKey(userId: string): SessionKey {
+    return `line:${userId}`;
+  }
+
+  /**
+   * HTTP用のキーを生成
+   */
+  private _makeHttpKey(correlationId: string): SessionKey {
+    return `http:${correlationId}`;
+  }
+
+  /**
+   * 正規ユーザーIDでセッションを取得
+   */
+  GetForUser(canonicalUserId: string, targetRepo?: string): SessionResult | undefined {
+    const key = this._makeUserKey(canonicalUserId, targetRepo);
+    return this._getByKey(key);
+  }
+
+  /**
+   * 正規ユーザーIDでセッションを保存
+   */
+  SetForUser(canonicalUserId: string, sessionId: string, targetRepo?: string, workingDirectory?: string): void {
+    const key = this._makeUserKey(canonicalUserId, targetRepo);
+    this._setByKey(key, sessionId, workingDirectory);
+  }
+
+  /**
+   * LINE用セッションを取得
+   */
+  GetForLine(userId: string): SessionResult | undefined {
+    const key = this._makeLineKey(userId);
+    return this._getByKey(key);
+  }
+
+  /**
+   * LINE用セッションを保存
+   */
+  SetForLine(userId: string, sessionId: string, workingDirectory?: string): void {
+    const key = this._makeLineKey(userId);
+    this._setByKey(key, sessionId, workingDirectory);
+  }
+
+  /**
+   * HTTP用セッションを取得
+   */
+  GetForHttp(correlationId: string): SessionResult | undefined {
+    const key = this._makeHttpKey(correlationId);
+    return this._getByKey(key);
+  }
+
+  /**
+   * HTTP用セッションを保存
+   */
+  SetForHttp(correlationId: string, sessionId: string, workingDirectory?: string): void {
+    const key = this._makeHttpKey(correlationId);
+    this._setByKey(key, sessionId, workingDirectory);
+  }
+
+  /**
+   * プラットフォーム固有のユーザーIDから正規ユーザーIDを解決する
+   */
+  ResolveCanonicalUserId(
+    source: TaskSource,
+    platformUserId: string,
+    userMappings: readonly UserMapping[]
+  ): string | undefined {
+    for (const mapping of userMappings) {
+      switch (source) {
+        case 'slack':
+          if (mapping.slack === platformUserId) return mapping.github;
+          break;
+        case 'github':
+          if (mapping.github.toLowerCase() === platformUserId.toLowerCase()) return mapping.github;
+          break;
+        case 'line':
+          if (mapping.line === platformUserId) return mapping.github;
+          break;
+        case 'http':
+          if (mapping.http === platformUserId) return mapping.github;
+          break;
+      }
+    }
+    return undefined;
   }
 
   /**

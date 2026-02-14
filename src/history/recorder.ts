@@ -5,6 +5,7 @@
 
 import type {
   Task,
+  TaskSource,
   TaskResult,
   WorkHistoryRecord,
   SlackTaskMetadata,
@@ -51,7 +52,22 @@ function ResolveUserId(task: Task): string | undefined {
     }
   }
 
+  if (task.metadata.source === 'line') {
+    return task.metadata.userId;
+  }
+
+  if (task.metadata.source === 'http') {
+    return task.metadata.deviceId ?? task.metadata.correlationId;
+  }
+
   return undefined;
+}
+
+/**
+ * タスクからソースチャネルを解決する
+ */
+function ResolveSourceChannel(task: Task): TaskSource {
+  return task.metadata.source;
 }
 
 /**
@@ -97,6 +113,7 @@ export function RecordTaskCompletion(task: Task, result: TaskResult): void {
     id: task.id,
     timestamp: new Date().toISOString(),
     source: task.source,
+    sourceChannel: ResolveSourceChannel(task),
     userId,
     prompt: TruncatePrompt(task.prompt),
     result: result.success ? 'success' : 'failure',

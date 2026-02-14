@@ -53,7 +53,7 @@ export function LoadAdminConfig(): AdminConfig {
           : [],
         userMappings: Array.isArray(parsed.userMappings)
           ? parsed.userMappings.filter(
-              (m): m is { github: string; slack: string } =>
+              (m): m is { github: string; slack: string; line?: string; http?: string } =>
                 typeof m === 'object' &&
                 m !== null &&
                 typeof m.github === 'string' &&
