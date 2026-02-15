@@ -46,6 +46,107 @@ npm run build
 npm start
 ```
 
+## Verifying with curl
+
+After starting the server, you can verify the HTTP channel is working using curl.
+
+### Obtain the Bearer Token
+
+A token is generated each time the server starts and saved to `~/.claps/auth-token`. Read it into a variable for convenience:
+
+```bash
+TOKEN=$(cat ~/.claps/auth-token)
+```
+
+Use `$TOKEN` in the examples below in place of `YOUR_BEARER_TOKEN`.
+
+### Health Check
+
+```bash
+curl http://localhost:3000/api/v1/health
+```
+
+Expected response:
+```json
+{
+  "status": "healthy",
+  "channels": { "slack": "healthy", "line": "healthy", "http": "healthy" },
+  "taskQueue": { "pending": 0, "running": 0 }
+}
+```
+
+### Send a Message (Start a Task)
+
+```bash
+curl -X POST http://localhost:3000/api/v1/messages \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_BEARER_TOKEN" \
+  -d '{
+    "message": "Please update the README",
+    "deviceId": "curl-test",
+    "targetRepo": "owner/repo"
+  }'
+```
+
+Expected response (202 Accepted):
+```json
+{
+  "taskId": "abc-123",
+  "status": "queued",
+  "pollUrl": "/api/v1/tasks/abc-123"
+}
+```
+
+### Poll Task Status
+
+```bash
+curl http://localhost:3000/api/v1/tasks/<taskId> \
+  -H "Authorization: Bearer YOUR_BEARER_TOKEN"
+```
+
+Expected response (200 OK):
+```json
+{
+  "taskId": "abc-123",
+  "status": "completed",
+  "result": {
+    "success": true,
+    "output": "README updated.",
+    "prUrl": "https://github.com/owner/repo/pull/42"
+  },
+  "pending": null
+}
+```
+
+### Respond to Approval Request
+
+When the task status is `awaiting_approval`:
+
+```bash
+curl -X POST http://localhost:3000/api/v1/tasks/<taskId>/approve \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_BEARER_TOKEN" \
+  -d '{
+    "requestId": "req-456",
+    "decision": "allow",
+    "comment": "Looks good"
+  }'
+```
+
+### Answer a Question
+
+When the task status is `awaiting_answer`:
+
+```bash
+curl -X POST http://localhost:3000/api/v1/tasks/<taskId>/answer \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_BEARER_TOKEN" \
+  -d '{
+    "requestId": "q-789",
+    "answer": "main"
+  }'
+```
+
 ## Requirements
 
 | Tool | Version | Purpose |
