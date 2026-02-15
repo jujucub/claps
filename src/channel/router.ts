@@ -131,15 +131,21 @@ export class NotificationRouter {
   // --- Special ---
 
   /**
-   * 内省結果を投稿（デフォルトアダプタに送信）
+   * 内省結果を投稿（全アクティブアダプタに送信）
    */
   async postReflectionResult(result: ReflectionResult): Promise<void> {
-    const adapter = this._registry.getDefaultAdapter();
-    if (!adapter) {
-      console.error('No default adapter for reflection result');
+    const activeAdapters = this._registry.getActiveAdapters();
+    if (activeAdapters.length === 0) {
+      console.error('No active adapters for reflection result');
       return;
     }
-    await adapter.postReflectionResult(result);
+    for (const adapter of activeAdapters) {
+      try {
+        await adapter.postReflectionResult(result);
+      } catch (error) {
+        console.error(`Failed to post reflection result to ${adapter.getName()}:`, error);
+      }
+    }
   }
 
   /**

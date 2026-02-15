@@ -422,7 +422,7 @@ export class ClaudeRunner {
    */
   private _extractPrUrl(output: string): string | undefined {
     // GitHub PR URL パターン
-    const prUrlPattern = /https:\/\/github\.com\/[^\/]+\/[^\/]+\/pull\/\d+/;
+    const prUrlPattern = /https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+/;
     const match = output.match(prUrlPattern);
     return match ? match[0] : undefined;
   }

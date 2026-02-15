@@ -13,6 +13,7 @@ import type { ChannelAdapter } from './adapter.js';
  */
 export class AdapterRegistry {
   private readonly _adapters = new Map<TaskSource, ChannelAdapter>();
+  private readonly _initializedAdapters = new Set<TaskSource>();
   private readonly _activeAdapters = new Set<TaskSource>();
   private _defaultSource: TaskSource | undefined;
 
@@ -70,6 +71,7 @@ export class AdapterRegistry {
     for (const [source, adapter] of this._adapters) {
       try {
         await adapter.init(callbacks);
+        this._initializedAdapters.add(source);
         console.log(`Adapter initialized: ${adapter.getName()}`);
       } catch (error) {
         console.error(`Failed to initialize adapter ${adapter.getName()} (${source}):`, error);
@@ -83,6 +85,10 @@ export class AdapterRegistry {
    */
   async startAll(): Promise<void> {
     for (const [source, adapter] of this._adapters) {
+      if (!this._initializedAdapters.has(source)) {
+        console.warn(`Skipping start for adapter ${adapter.getName()} (${source}): not initialized`);
+        continue;
+      }
       try {
         await adapter.start();
         this._activeAdapters.add(source);

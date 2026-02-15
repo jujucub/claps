@@ -21,7 +21,7 @@ let _currentConfig: Config | undefined;
 let _currentOnIssueFound:
   | ((metadata: GitHubTaskMetadata, prompt: string) => Promise<void>)
   | undefined;
-let _state: PollerState = {
+const _state: PollerState = {
   isRunning: false,
   intervalId: null,
   lastPollTime: null,

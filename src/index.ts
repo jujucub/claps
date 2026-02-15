@@ -33,6 +33,7 @@ import { GetOrCloneRepo, GetWorkspacePath } from './git/repo.js';
 import {
   GetSlackUserForGitHub,
   GetAdminSlackUser,
+  GetAdminConfig,
 } from './admin/store.js';
 import { SetupGlobalMcpConfig } from './mcp/setup.js';
 import { RecordTaskCompletion } from './history/recorder.js';
@@ -301,8 +302,9 @@ async function ProcessNextTask(): Promise<void> {
           result = await ProcessSlackWithTargetRepo(task, linkedTargetRepo);
         } else {
         // 通常のSlackタスク
-        // 同じスレッドの既存セッションを取得
-        const existingSession = sessionStore.Get(slackMeta.threadTs, slackMeta.userId);
+        // 同じスレッドの既存セッションを取得（チャネル固有 → canonical userフォールバック）
+        const existingSession = sessionStore.Get(slackMeta.threadTs, slackMeta.userId)
+          ?? GetCrossChannelSession(task.metadata);
         const existingSessionId = existingSession?.sessionId;
         if (existingSessionId) {
           console.log(`Resuming existing session for thread ${slackMeta.threadTs}: ${existingSessionId}`);
@@ -331,6 +333,7 @@ async function ProcessNextTask(): Promise<void> {
         // 新しいセッションIDが返された場合は保存
         if (runResult.sessionId) {
           sessionStore.Set(slackMeta.threadTs, slackMeta.userId, runResult.sessionId, workingDirectory);
+          SaveCrossChannelSession(task.metadata, runResult.sessionId, undefined, workingDirectory);
           console.log(`Session saved for thread ${slackMeta.threadTs}: ${runResult.sessionId}`);
         }
 
@@ -448,6 +451,7 @@ async function ProcessSlackAsIssueTask(
     // セッションIDを保存
     if (runResult.sessionId) {
       sessionStore.SetForIssue(issueInfo.owner, issueInfo.repo, issueInfo.issueNumber, runResult.sessionId, worktreeInfo.worktreePath);
+      SaveCrossChannelSession(task.metadata, runResult.sessionId, `${issueInfo.owner}/${issueInfo.repo}`, worktreeInfo.worktreePath);
     }
 
     // 変更があればコミット＆プッシュ
@@ -531,8 +535,9 @@ async function ProcessSlackWithTargetRepo(
       );
     }
 
-    // セッションを取得（スレッド+ユーザー単位）
-    const existingSession = sessionStore.Get(slackMeta.threadTs, slackMeta.userId);
+    // セッションを取得（スレッド+ユーザー → canonical userフォールバック）
+    const existingSession = sessionStore.Get(slackMeta.threadTs, slackMeta.userId)
+      ?? GetCrossChannelSession(task.metadata, targetRepo);
     const existingSessionId = existingSession?.sessionId;
     if (existingSessionId) {
       console.log(`Resuming existing session: ${existingSessionId}`);
@@ -563,6 +568,7 @@ async function ProcessSlackWithTargetRepo(
     // セッションIDを保存（同じスレッドでの次回メッセージで再開するため）
     if (runResult.sessionId) {
       sessionStore.Set(slackMeta.threadTs, slackMeta.userId, runResult.sessionId, workingDirectory);
+      SaveCrossChannelSession(task.metadata, runResult.sessionId, targetRepo, workingDirectory);
       console.log(`Session saved for thread ${slackMeta.threadTs}: ${runResult.sessionId}`);
     }
 
@@ -613,8 +619,9 @@ async function ProcessLineTask(
         `ブランチ \`${worktreeInfo.branchName}\` で作業を開始いたしますわ`
       );
 
-      // セッションを取得（LINE userId でルックアップ）
-      const existingSession = sessionStore.GetForLine(lineMeta.userId);
+      // セッションを取得（LINE userId → canonical userフォールバック）
+      const existingSession = sessionStore.GetForLine(lineMeta.userId)
+        ?? GetCrossChannelSession(task.metadata, lineMeta.targetRepo);
       const existingSessionId = existingSession?.sessionId;
 
       const onWorkLog = CreateWorkLogCallback(task);
@@ -630,6 +637,7 @@ async function ProcessLineTask(
 
       if (runResult.sessionId) {
         sessionStore.SetForLine(lineMeta.userId, runResult.sessionId, workingDirectory);
+        SaveCrossChannelSession(task.metadata, runResult.sessionId, lineMeta.targetRepo, workingDirectory);
       }
 
       return {
@@ -641,7 +649,9 @@ async function ProcessLineTask(
     }
 
     // targetRepo なし: 汎用ワークスペースで実行
-    const existingSession = sessionStore.GetForLine(lineMeta.userId);
+    // セッション取得（LINE userId → canonical userフォールバック）
+    const existingSession = sessionStore.GetForLine(lineMeta.userId)
+      ?? GetCrossChannelSession(task.metadata);
     const existingSessionId = existingSession?.sessionId;
     if (existingSessionId) {
       console.log(`Resuming LINE session for ${lineMeta.userId}: ${existingSessionId}`);
@@ -662,6 +672,7 @@ async function ProcessLineTask(
 
     if (runResult.sessionId) {
       sessionStore.SetForLine(lineMeta.userId, runResult.sessionId, workingDirectory);
+      SaveCrossChannelSession(task.metadata, runResult.sessionId, undefined, workingDirectory);
       console.log(`LINE session saved for ${lineMeta.userId}: ${runResult.sessionId}`);
     }
 
@@ -703,7 +714,9 @@ async function ProcessHttpTask(
 
       await _router.notifyProgress(task.id, task.metadata, `Branch: ${worktreeInfo.branchName}`);
 
-      const existingSession = sessionStore.GetForHttp(httpMeta.correlationId);
+      // セッション取得（HTTP correlationId → canonical userフォールバック）
+      const existingSession = sessionStore.GetForHttp(httpMeta.correlationId)
+        ?? GetCrossChannelSession(task.metadata, httpMeta.targetRepo);
       const existingSessionId = existingSession?.sessionId;
 
       const onWorkLog = CreateWorkLogCallback(task);
@@ -719,6 +732,7 @@ async function ProcessHttpTask(
 
       if (runResult.sessionId) {
         sessionStore.SetForHttp(httpMeta.correlationId, runResult.sessionId, workingDirectory);
+        SaveCrossChannelSession(task.metadata, runResult.sessionId, httpMeta.targetRepo, workingDirectory);
       }
 
       return {
@@ -730,7 +744,9 @@ async function ProcessHttpTask(
     }
 
     // targetRepo なし: 汎用ワークスペースで実行
-    const existingSession = sessionStore.GetForHttp(httpMeta.correlationId);
+    // セッション取得（HTTP correlationId → canonical userフォールバック）
+    const existingSession = sessionStore.GetForHttp(httpMeta.correlationId)
+      ?? GetCrossChannelSession(task.metadata);
     const existingSessionId = existingSession?.sessionId;
 
     const onWorkLog = CreateWorkLogCallback(task);
@@ -746,6 +762,7 @@ async function ProcessHttpTask(
 
     if (runResult.sessionId) {
       sessionStore.SetForHttp(httpMeta.correlationId, runResult.sessionId, workingDirectory);
+      SaveCrossChannelSession(task.metadata, runResult.sessionId, undefined, workingDirectory);
     }
 
     return runResult;
@@ -839,6 +856,7 @@ async function ProcessGitHubTask(
     // セッションIDを保存
     if (runResult.sessionId) {
       sessionStore.SetForIssue(meta.owner, meta.repo, meta.issueNumber, runResult.sessionId, worktreeInfo.worktreePath);
+      SaveCrossChannelSession(task.metadata, runResult.sessionId, `${meta.owner}/${meta.repo}`, worktreeInfo.worktreePath);
     }
 
     // Claude CLIの結果をそのまま返す（コミット・PR作成はLLMが判断して実行）
@@ -1124,6 +1142,65 @@ function CreateWorkLogCallback(
       console.error('Failed to post work log:', e);
     }
   };
+}
+
+/**
+ * チャネル横断セッション: タスク完了時にcanonical userキーにもセッションを保存する
+ */
+function SaveCrossChannelSession(
+  metadata: TaskMetadata,
+  sessionId: string,
+  targetRepo?: string,
+  workingDirectory?: string
+): void {
+  const sessionStore = GetSessionStore();
+  const config = GetAdminConfig();
+  const platformUserId = GetPlatformUserId(metadata);
+  if (!platformUserId) return;
+
+  const canonicalUserId = sessionStore.ResolveCanonicalUserId(
+    metadata.source,
+    platformUserId,
+    config.userMappings
+  );
+  if (!canonicalUserId) return;
+
+  sessionStore.SetForUser(canonicalUserId, sessionId, targetRepo, workingDirectory);
+  console.log(`Cross-channel session saved: user:${canonicalUserId}:${targetRepo ?? 'default'} -> ${sessionId}`);
+}
+
+/**
+ * チャネル横断セッション: canonical userキーからセッションを検索する（フォールバック用）
+ */
+function GetCrossChannelSession(
+  metadata: TaskMetadata,
+  targetRepo?: string
+): import('./session/store.js').SessionResult | undefined {
+  const sessionStore = GetSessionStore();
+  const config = GetAdminConfig();
+  const platformUserId = GetPlatformUserId(metadata);
+  if (!platformUserId) return undefined;
+
+  const canonicalUserId = sessionStore.ResolveCanonicalUserId(
+    metadata.source,
+    platformUserId,
+    config.userMappings
+  );
+  if (!canonicalUserId) return undefined;
+
+  return sessionStore.GetForUser(canonicalUserId, targetRepo);
+}
+
+/**
+ * メタデータからプラットフォーム固有のユーザーIDを取得する
+ */
+function GetPlatformUserId(metadata: TaskMetadata): string | undefined {
+  switch (metadata.source) {
+    case 'slack': return (metadata as SlackTaskMetadata).userId;
+    case 'github': return (metadata as GitHubTaskMetadata).requestingUser;
+    case 'line': return (metadata as LineTaskMetadata).userId;
+    case 'http': return (metadata as HttpTaskMetadata).deviceId;
+  }
 }
 
 /**
