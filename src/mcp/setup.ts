@@ -32,7 +32,7 @@ export function SetupGlobalMcpConfig(): void {
       const content = fs.readFileSync(configPath, 'utf-8');
       config = JSON.parse(content) as ClaudeConfig;
       console.log('📋 既存の ~/.claude.json を検出しました');
-    } catch (error) {
+    } catch (_error) {
       console.warn('⚠️ ~/.claude.json のパースに失敗、新規作成します');
     }
   }

@@ -46,6 +46,107 @@ npm run build
 npm start
 ```
 
+## curlによる動作確認
+
+サーバー起動後、curlでHTTPチャネルの動作を確認できます。
+
+### Bearerトークンの取得
+
+サーバー起動時にトークンが生成され、`~/.claps/auth-token` に保存されます。以下のコマンドで変数に読み込んでおくと便利です:
+
+```bash
+TOKEN=$(cat ~/.claps/auth-token)
+```
+
+以下の例の `YOUR_BEARER_TOKEN` を `$TOKEN` に置き換えて使用してください。
+
+### ヘルスチェック
+
+```bash
+curl http://localhost:3000/api/v1/health
+```
+
+期待されるレスポンス:
+```json
+{
+  "status": "healthy",
+  "channels": { "slack": "healthy", "line": "healthy", "http": "healthy" },
+  "taskQueue": { "pending": 0, "running": 0 }
+}
+```
+
+### メッセージ送信（タスク起動）
+
+```bash
+curl -X POST http://localhost:3000/api/v1/messages \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_BEARER_TOKEN" \
+  -d '{
+    "message": "READMEを更新してください",
+    "deviceId": "curl-test",
+    "targetRepo": "owner/repo"
+  }'
+```
+
+期待されるレスポンス（202 Accepted）:
+```json
+{
+  "taskId": "abc-123",
+  "status": "queued",
+  "pollUrl": "/api/v1/tasks/abc-123"
+}
+```
+
+### タスクステータスのポーリング
+
+```bash
+curl http://localhost:3000/api/v1/tasks/<taskId> \
+  -H "Authorization: Bearer YOUR_BEARER_TOKEN"
+```
+
+期待されるレスポンス（200 OK）:
+```json
+{
+  "taskId": "abc-123",
+  "status": "completed",
+  "result": {
+    "success": true,
+    "output": "READMEを更新しました。",
+    "prUrl": "https://github.com/owner/repo/pull/42"
+  },
+  "pending": null
+}
+```
+
+### 承認リクエストへの応答
+
+タスクのステータスが `awaiting_approval` の場合:
+
+```bash
+curl -X POST http://localhost:3000/api/v1/tasks/<taskId>/approve \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_BEARER_TOKEN" \
+  -d '{
+    "requestId": "req-456",
+    "decision": "allow",
+    "comment": "問題ありません"
+  }'
+```
+
+### 質問への回答
+
+タスクのステータスが `awaiting_answer` の場合:
+
+```bash
+curl -X POST http://localhost:3000/api/v1/tasks/<taskId>/answer \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_BEARER_TOKEN" \
+  -d '{
+    "requestId": "q-789",
+    "answer": "main"
+  }'
+```
+
 ## 必要な環境
 
 | ツール | バージョン | 用途 |
