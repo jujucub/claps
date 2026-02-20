@@ -8,6 +8,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { GetBotName } from '../messages.js';
+import { GetTokenProvider } from '../github/auth.js';
 
 // clapsのPreToolUseフック設定（承認用）
 // matcher空文字列で全ツールに対してHookを実行
@@ -205,6 +206,14 @@ export async function CommitAndPush(
       stdio: 'pipe',
     });
 
+    // push前にフレッシュトークンでremote URLを更新
+    const token = await GetTokenProvider().GetToken();
+    const pushUrl = `https://x-access-token:${token}@github.com/${worktreeInfo.owner}/${worktreeInfo.repo}.git`;
+    execSync(`git remote set-url origin "${pushUrl}"`, {
+      cwd: worktreeInfo.worktreePath,
+      stdio: 'pipe',
+    });
+
     // プッシュ
     execSync(`git push -u origin ${worktreeInfo.branchName}`, {
       cwd: worktreeInfo.worktreePath,
@@ -230,12 +239,16 @@ export async function CreatePullRequest(
   try {
     const defaultBranch = GetDefaultBranch(worktreeInfo.worktreePath);
 
+    // gh CLIにフレッシュトークンを動的に注入
+    const token = await GetTokenProvider().GetToken();
+
     // gh コマンドで PR を作成
     const result = execSync(
       `gh pr create --title "${title.replace(/"/g, '\\"')}" --body "${body.replace(/"/g, '\\"')}" --base ${defaultBranch} --head ${worktreeInfo.branchName}`,
       {
         cwd: worktreeInfo.worktreePath,
         encoding: 'utf-8',
+        env: { ...process.env, GITHUB_TOKEN: token },
       }
     );
 

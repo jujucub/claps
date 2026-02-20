@@ -36,6 +36,7 @@ import {
   GetAdminConfig,
 } from './admin/store.js';
 import { SetupGlobalMcpConfig } from './mcp/setup.js';
+import { InitTokenProvider } from './github/auth.js';
 import { RecordTaskCompletion } from './history/recorder.js';
 import {
   InitReflectionScheduler,
@@ -75,8 +76,11 @@ async function Start(): Promise<void> {
   // 設定を読み込む
   _config = LoadConfig();
 
+  // トークンプロバイダーを初期化
+  InitTokenProvider(_config.githubAuth);
+
   // MCP設定をセットアップ（~/.claude.jsonに追加）
-  SetupGlobalMcpConfig();
+  await SetupGlobalMcpConfig();
 
   // 汎用ワークスペースを初期化（hook設定を注入）
   const workspacePath = GetWorkspacePath();
@@ -127,8 +131,8 @@ async function Start(): Promise<void> {
   }
 
   // GitHub Poller を初期化・開始
-  InitGitHubPoller(_config);
-  StartGitHubPoller(_config, HandleGitHubIssue, HandleIssueClosed);
+  await InitGitHubPoller(_config);
+  await StartGitHubPoller(_config, HandleGitHubIssue, HandleIssueClosed);
 
   // タスクキューのイベントを監視
   _taskQueue.On('added', OnTaskAdded);
@@ -399,7 +403,6 @@ async function ProcessSlackAsIssueTask(
     const repoPath = await GetOrCloneRepo(
       issueInfo.owner,
       issueInfo.repo,
-      _config.githubToken
     );
 
     // 既存の worktree を取得（なければ作成）
@@ -504,7 +507,7 @@ async function ProcessSlackWithTargetRepo(
   try {
     // リポジトリをクローン（または更新）
     console.log(`Getting or cloning repo ${targetRepo}...`);
-    const repoPath = await GetOrCloneRepo(owner, repo, _config.githubToken);
+    const repoPath = await GetOrCloneRepo(owner, repo);
 
     // スレッドにtargetRepoを紐づける（同じスレッドでのメンションも同じworktreeで作業するため）
     sessionStore.LinkThreadToTargetRepo(slackMeta.threadTs, targetRepo);
@@ -609,7 +612,7 @@ async function ProcessLineTask(
       const owner = parts[0] as string;
       const repo = parts[1] as string;
 
-      const repoPath = await GetOrCloneRepo(owner, repo, _config.githubToken);
+      const repoPath = await GetOrCloneRepo(owner, repo);
       const worktreeIdentifier = Date.now();
       const { worktreeInfo } = await GetOrCreateWorktree(repoPath, owner, repo, worktreeIdentifier);
 
@@ -708,7 +711,7 @@ async function ProcessHttpTask(
       const owner = parts[0] as string;
       const repo = parts[1] as string;
 
-      const repoPath = await GetOrCloneRepo(owner, repo, _config.githubToken);
+      const repoPath = await GetOrCloneRepo(owner, repo);
       const worktreeIdentifier = Date.now();
       const { worktreeInfo } = await GetOrCreateWorktree(repoPath, owner, repo, worktreeIdentifier);
 
@@ -794,7 +797,7 @@ async function ProcessGitHubTask(
   try {
     // リポジトリをクローン（または更新）
     console.log(`Getting or cloning repo ${meta.owner}/${meta.repo}...`);
-    const repoPath = await GetOrCloneRepo(meta.owner, meta.repo, _config.githubToken);
+    const repoPath = await GetOrCloneRepo(meta.owner, meta.repo);
 
     // 既存の worktree があれば再利用、なければ新規作成
     console.log(`Getting or creating worktree for issue #${meta.issueNumber}...`);

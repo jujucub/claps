@@ -138,13 +138,19 @@ export interface AdminConfig {
   userMappings: UserMapping[];
 }
 
+// GitHub認証設定
+export type GitHubAuthConfig =
+  | { readonly mode: 'pat'; readonly token: string }
+  | { readonly mode: 'github-app'; readonly appId: string; readonly privateKeyPath: string; readonly installationId: number };
+
 // 設定
 export interface Config {
   readonly anthropicApiKey?: string; // Max Plan 使用時は不要
   readonly slackBotToken: string;
   readonly slackAppToken: string;
   readonly slackChannelId: string;
-  readonly githubToken: string;
+  readonly githubToken: string; // 後方互換: PATモード時のみ値が入る
+  readonly githubAuth: GitHubAuthConfig;
   readonly githubRepos: readonly string[];
   readonly approvalServerPort: number;
   readonly githubPollInterval: number;

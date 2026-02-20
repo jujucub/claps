@@ -7,6 +7,7 @@ import { Octokit } from '@octokit/rest';
 import type { Config, GitHubTaskMetadata, AllowedUsers } from '../types/index.js';
 import { GetTaskQueue } from '../queue/taskQueue.js';
 import { GetBotName } from '../messages.js';
+import { GetTokenProvider } from './auth.js';
 
 // ポーラー状態
 interface PollerState {
@@ -87,10 +88,8 @@ function IsUserAllowed(username: string): boolean {
 /**
  * GitHub Poller を初期化する
  */
-export function InitGitHubPoller(config: Config): void {
-  _octokit = new Octokit({
-    auth: config.githubToken,
-  });
+export async function InitGitHubPoller(config: Config): Promise<void> {
+  _octokit = await GetTokenProvider().GetOctokit();
   _allowedUsers = config.allowedUsers;
 }
 
@@ -101,18 +100,18 @@ let _onIssueClosed: OnIssueClosedCallback | undefined;
 /**
  * GitHub Poller を開始する
  */
-export function StartGitHubPoller(
+export async function StartGitHubPoller(
   config: Config,
   onIssueFound: (metadata: GitHubTaskMetadata, prompt: string) => Promise<void>,
   onIssueClosed?: OnIssueClosedCallback
-): void {
+): Promise<void> {
   if (_state.isRunning) {
     console.log('GitHub Poller is already running');
     return;
   }
 
   if (!_octokit) {
-    InitGitHubPoller(config);
+    await InitGitHubPoller(config);
   }
 
   // 設定とコールバックを保存（UpdateRepos用）
@@ -153,6 +152,14 @@ export async function PollIssues(
 ): Promise<void> {
   if (!_octokit) {
     console.error('GitHub Poller not initialized');
+    return;
+  }
+
+  // ポーリングサイクルごとにOctokitを更新（Appモードでのトークンローテーション対応）
+  try {
+    _octokit = await GetTokenProvider().GetOctokit();
+  } catch (error) {
+    console.error('Failed to refresh Octokit token:', error);
     return;
   }
 
