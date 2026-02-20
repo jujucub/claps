@@ -109,6 +109,92 @@ export class HistoryStore {
   }
 
   /**
+   * 指定ISO日時以降のレコードを返す
+   * sinceIsoの日付から今日までのJSONLファイルを読み、タイムスタンプでフィルタする
+   */
+  GetRecordsSince(userId: string, sinceIso: string): readonly WorkHistoryRecord[] {
+    const userDir = GetUserDir(userId);
+
+    if (!fs.existsSync(userDir)) {
+      return [];
+    }
+
+    const sinceTime = new Date(sinceIso).getTime();
+    const sinceDate = new Date(sinceIso);
+    const now = new Date();
+    const records: WorkHistoryRecord[] = [];
+
+    // sinceの日付から今日までのファイルを走査
+    const current = new Date(sinceDate);
+    current.setHours(0, 0, 0, 0);
+
+    while (current <= now) {
+      const dateStr = FormatDate(current);
+      const filePath = path.join(userDir, `${dateStr}.jsonl`);
+
+      if (fs.existsSync(filePath)) {
+        try {
+          const content = fs.readFileSync(filePath, 'utf-8');
+          const lines = content.split('\n').filter((line) => line.trim() !== '');
+
+          for (const line of lines) {
+            try {
+              const record = JSON.parse(line) as WorkHistoryRecord;
+              if (new Date(record.timestamp).getTime() > sinceTime) {
+                records.push(record);
+              }
+            } catch {
+              // 不正なJSONL行はスキップ
+            }
+          }
+        } catch (error) {
+          console.error(`Failed to read history file ${filePath}:`, error);
+        }
+      }
+
+      current.setDate(current.getDate() + 1);
+    }
+
+    return records;
+  }
+
+  /**
+   * 指定日付にレコードが存在するかチェックする
+   */
+  HasRecordsForDate(date: Date): boolean {
+    if (!fs.existsSync(HISTORY_BASE_DIR)) {
+      return false;
+    }
+
+    const dateStr = FormatDate(date);
+
+    try {
+      const userDirs = fs.readdirSync(HISTORY_BASE_DIR);
+
+      for (const userDir of userDirs) {
+        const userPath = path.join(HISTORY_BASE_DIR, userDir);
+
+        if (!fs.statSync(userPath).isDirectory()) {
+          continue;
+        }
+
+        const filePath = path.join(userPath, `${dateStr}.jsonl`);
+        if (fs.existsSync(filePath)) {
+          // ファイルが存在し、中身があるかチェック
+          const stat = fs.statSync(filePath);
+          if (stat.size > 0) {
+            return true;
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Failed to check records for date:', error);
+    }
+
+    return false;
+  }
+
+  /**
    * 指定日数内にアクティブだったユーザーIDの一覧を取得する
    */
   GetActiveUsers(days: number): readonly string[] {
