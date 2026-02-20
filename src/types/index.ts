@@ -270,6 +270,24 @@ export interface ReflectionConfig {
   readonly maxRecordsPerUser: number;
 }
 
+// ユーザーインテント（意図・目標）
+export interface UserIntent {
+  readonly userId: string;
+  readonly updatedAt: string;
+  readonly shortTermGoals: readonly IntentGoal[];
+  readonly longTermGoals: readonly IntentGoal[];
+}
+
+export interface IntentGoal {
+  readonly id: string;
+  readonly description: string;
+  readonly confidence: 'high' | 'medium' | 'low';
+  readonly firstSeenAt: string;
+  readonly lastSeenAt: string;
+  readonly evidence: readonly string[];
+  readonly status: 'active' | 'completed' | 'stale';
+}
+
 // Hook の入出力
 export interface HookInput {
   readonly tool_name: string;
