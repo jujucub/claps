@@ -416,9 +416,9 @@ function GetToolDetails(toolName: string, toolInput: Record<string, unknown>): s
  * それ以外のコマンド（git status, npm run build 等）は自動承認される
  */
 const DANGEROUS_BASH_PATTERNS: RegExp[] = [
-  // ファイル削除系
-  /\brm\s+(-[a-zA-Z]*r|-[a-zA-Z]*f|--recursive|--force)/,
-  /\brm\s+-rf\b/,
+  // ファイル削除・移動系（上書きリスクを含む）
+  /\brm\s/,
+  /\bmv\s/,
   // Git リモート操作・破壊的操作
   /\bgit\s+push\b/,
   /\bgit\s+reset\s+--hard\b/,
