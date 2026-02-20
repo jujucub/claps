@@ -166,7 +166,7 @@ curl -X POST http://localhost:3000/api/v1/tasks/<taskId>/answer \
 | `SLACK_APP_TOKEN` | `xapp-...` | Slack App Token (Socket Mode) |
 | `SLACK_CHANNEL_ID` | `C0123456789` | Notification channel ID |
 | `SLACK_TEAM_ID` | `T0123456789` | Slack workspace ID |
-| `GITHUB_TOKEN` | `github_pat_...` | GitHub Personal Access Token |
+| `GITHUB_TOKEN` | `github_pat_...` | GitHub Personal Access Token (PAT mode) |
 | `GITHUB_REPOS` | `owner/repo1,owner/repo2` | Monitored repositories (comma-separated) |
 
 ### Optional
@@ -179,6 +179,17 @@ curl -X POST http://localhost:3000/api/v1/tasks/<taskId>/answer \
 | `ADMIN_SLACK_USER` | - | Admin Slack user ID |
 | `ALLOWED_GITHUB_USERS` | - | Allowed GitHub users (comma-separated, initial value) |
 | `ALLOWED_SLACK_USERS` | - | Allowed Slack user IDs (comma-separated, initial value) |
+
+### GitHub App Authentication (Alternative to PAT)
+
+Instead of a PAT, you can use a GitHub App for bot-attributed commits (`キャラ名[bot]`) and short-lived tokens. See **[GitHub App Setup Guide](./docs/GITHUB_APP_SETUP.md)** for details.
+
+| Variable | Description |
+|----------|-------------|
+| `GITHUB_AUTH_MODE` | `pat` (default) or `github-app` |
+| `GITHUB_APP_ID` | GitHub App ID |
+| `GITHUB_APP_PRIVATE_KEY_PATH` | Path to `.pem` file (e.g. `~/.claps/github-app.pem`) |
+| `GITHUB_APP_INSTALLATION_ID` | Installation ID |
 
 ## Usage
 
@@ -278,6 +289,7 @@ See `src/messages.ts` for all available message keys.
 ## Documentation
 
 - [Design Document](./docs/DESIGN.md) - System architecture, processing flow, implementation details
+- [GitHub App Setup Guide](./docs/GITHUB_APP_SETUP.md) - GitHub App authentication setup
 - [Contributing Guide](./docs/CONTRIB.md) - Development setup, coding conventions
 - [Runbook](./docs/RUNBOOK.md) - Deployment, monitoring, troubleshooting
 
