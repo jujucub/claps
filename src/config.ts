@@ -6,7 +6,7 @@ import * as dotenv from 'dotenv';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import type { Config, AllowedUsers, ChannelConfig, ReflectionConfig } from './types/index.js';
+import type { Config, AllowedUsers, ChannelConfig, ReflectionConfig, GitHubAuthConfig } from './types/index.js';
 import { LoadAdminConfig, HasAdminConfig } from './admin/store.js';
 
 // ~/.claps/.env を優先的に読み込む（存在する場合）
@@ -37,7 +37,6 @@ export function LoadConfig(): Config {
   const slackBotToken = process.env['SLACK_BOT_TOKEN'];
   const slackAppToken = process.env['SLACK_APP_TOKEN'];
   const slackChannelId = process.env['SLACK_CHANNEL_ID'];
-  const githubToken = process.env['GITHUB_TOKEN'];
   const githubReposStr = process.env['GITHUB_REPOS'];
 
   // 必須項目のバリデーション
@@ -50,11 +49,46 @@ export function LoadConfig(): Config {
   if (!slackChannelId) {
     throw new Error('SLACK_CHANNEL_ID is required');
   }
-  if (!githubToken) {
-    throw new Error('GITHUB_TOKEN is required');
-  }
   if (!githubReposStr) {
     throw new Error('GITHUB_REPOS is required');
+  }
+
+  // GitHub認証モードの判定
+  const authMode = process.env['GITHUB_AUTH_MODE'] ?? 'pat';
+  let githubAuth: GitHubAuthConfig;
+  let githubToken: string;
+
+  if (authMode === 'github-app') {
+    const appId = process.env['GITHUB_APP_ID'];
+    const privateKeyPath = process.env['GITHUB_APP_PRIVATE_KEY_PATH'];
+    const installationIdStr = process.env['GITHUB_APP_INSTALLATION_ID'];
+
+    if (!appId) {
+      throw new Error('GITHUB_APP_ID is required when GITHUB_AUTH_MODE=github-app');
+    }
+    if (!privateKeyPath) {
+      throw new Error('GITHUB_APP_PRIVATE_KEY_PATH is required when GITHUB_AUTH_MODE=github-app');
+    }
+    if (!installationIdStr) {
+      throw new Error('GITHUB_APP_INSTALLATION_ID is required when GITHUB_AUTH_MODE=github-app');
+    }
+
+    const installationId = parseInt(installationIdStr, 10);
+    if (isNaN(installationId)) {
+      throw new Error('GITHUB_APP_INSTALLATION_ID must be a number');
+    }
+
+    githubAuth = { mode: 'github-app', appId, privateKeyPath, installationId };
+    githubToken = ''; // Appモードでは使用しない
+    console.log('GitHub auth mode: github-app');
+  } else {
+    const token = process.env['GITHUB_TOKEN'];
+    if (!token) {
+      throw new Error('GITHUB_TOKEN is required when GITHUB_AUTH_MODE=pat (or unset)');
+    }
+    githubAuth = { mode: 'pat', token };
+    githubToken = token;
+    console.log('GitHub auth mode: pat');
   }
 
   // 環境変数からのリポジトリ設定
@@ -143,6 +177,7 @@ export function LoadConfig(): Config {
     slackAppToken,
     slackChannelId,
     githubToken,
+    githubAuth,
     githubRepos,
     approvalServerPort,
     githubPollInterval,

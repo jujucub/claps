@@ -6,6 +6,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { GetTokenProvider } from '../github/auth.js';
 
 interface McpServerConfig {
   readonly command: string;
@@ -22,7 +23,7 @@ interface ClaudeConfig {
  * グローバルな~/.claude.jsonにclaps用のMCPサーバー設定を追加する
  * 既存の設定はマージして保持する
  */
-export function SetupGlobalMcpConfig(): void {
+export async function SetupGlobalMcpConfig(): Promise<void> {
   const configPath = path.join(os.homedir(), '.claude.json');
 
   // 既存の設定を読み込む
@@ -43,18 +44,19 @@ export function SetupGlobalMcpConfig(): void {
   // claps用のMCPサーバーを追加（プレフィックスで衝突回避）
   const clapsMcpServers: Record<string, McpServerConfig> = {};
 
-  // GitHub MCP Server（GITHUB_TOKENが設定されている場合のみ）
-  if (process.env['GITHUB_TOKEN']) {
+  // GitHub MCP Server（トークンプロバイダーからトークンを取得）
+  try {
+    const githubToken = await GetTokenProvider().GetToken();
     clapsMcpServers['claps-github'] = {
       command: 'npx',
       args: ['-y', '@modelcontextprotocol/server-github'],
       env: {
-        GITHUB_PERSONAL_ACCESS_TOKEN: process.env['GITHUB_TOKEN'],
+        GITHUB_PERSONAL_ACCESS_TOKEN: githubToken,
       },
     };
     console.log('✅ claps-github MCP Server を設定しました');
-  } else {
-    console.log('⏭️ GITHUB_TOKEN が未設定のため claps-github をスキップ');
+  } catch {
+    console.log('⏭️ GitHub トークンの取得に失敗したため claps-github をスキップ');
   }
 
   // Slack MCP Server（SLACK_BOT_TOKENとSLACK_TEAM_IDが両方設定されている場合のみ）

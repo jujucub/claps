@@ -5,6 +5,7 @@
 
 import { spawn, type ChildProcess } from 'child_process';
 import { LoadCharacterPrompt } from '../character.js';
+import { GetTokenProvider } from '../github/auth.js';
 
 // 出力コールバック
 export type OutputCallback = (chunk: string, type: 'stdout' | 'stderr') => void;
@@ -79,6 +80,14 @@ export class ClaudeRunner {
     const timeout = options.timeout ?? this._defaultTimeout;
     const maxOutputSize = options.maxOutputSize ?? this._maxOutputSize;
 
+    // フレッシュトークンを取得してgh CLI用に注入（Promiseの外で非同期処理を行う）
+    let githubToken: string | undefined;
+    try {
+      githubToken = await GetTokenProvider().GetToken();
+    } catch (error) {
+      console.warn('Failed to get GitHub token for Claude subprocess:', error);
+    }
+
     return new Promise((resolve) => {
       let stdout = '';
       let stderr = '';
@@ -115,17 +124,22 @@ export class ClaudeRunner {
 
       // Claude CLI を起動
       // CLAUDE_PROJECT_DIR を明示的に設定してworktree側の.claude/設定を使用する
+      const claudeEnv: Record<string, string | undefined> = {
+        ...process.env,
+        CLAUDE_PROJECT_DIR: options.workingDirectory,
+        CLAPS_TASK_ID: taskId,
+        APPROVAL_SERVER_URL: `http://localhost:${options.approvalServerPort ?? 3001}`,
+      };
+      if (githubToken) {
+        claudeEnv['GITHUB_TOKEN'] = githubToken;
+      }
+
       const claudeProcess = spawn(
         'claude',
         args,
         {
           cwd: options.workingDirectory,
-          env: {
-            ...process.env,
-            CLAUDE_PROJECT_DIR: options.workingDirectory,
-            CLAPS_TASK_ID: taskId,
-            APPROVAL_SERVER_URL: `http://localhost:${options.approvalServerPort ?? 3001}`,
-          },
+          env: claudeEnv,
           stdio: ['pipe', 'pipe', 'pipe'],
           shell: false,
         }

@@ -7,6 +7,7 @@ import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { GetTokenProvider } from '../github/auth.js';
 
 /**
  * .claps ディレクトリのパスを取得する
@@ -39,23 +40,27 @@ export function GetWorkspacePath(): string {
  * リポジトリをクローンまたは更新する
  * - リポジトリがクローン済みなら fetch して最新化
  * - 未クローンなら git clone を実行
+ * トークンはシングルトンの GetTokenProvider() から取得する
  * @param owner リポジトリオーナー
  * @param repo リポジトリ名
- * @param githubToken GitHub トークン
  * @returns クローンしたリポジトリのパス
  */
 export async function GetOrCloneRepo(
   owner: string,
   repo: string,
-  githubToken: string
 ): Promise<string> {
   const repoPath = GetRepoPath(owner, repo);
-  const repoUrl = `https://x-access-token:${githubToken}@github.com/${owner}/${repo}.git`;
+  const token = await GetTokenProvider().GetToken();
+  const repoUrl = `https://x-access-token:${token}@github.com/${owner}/${repo}.git`;
 
   if (fs.existsSync(path.join(repoPath, '.git'))) {
-    // 既にクローン済みの場合は fetch して最新化
+    // 既にクローン済みの場合は remote URL を更新してから fetch（トークンリフレッシュ対応）
     console.log(`Fetching existing repo: ${owner}/${repo}`);
     try {
+      execSync(`git remote set-url origin "${repoUrl}"`, {
+        cwd: repoPath,
+        stdio: 'pipe',
+      });
       execSync('git fetch --all', {
         cwd: repoPath,
         stdio: 'pipe',
