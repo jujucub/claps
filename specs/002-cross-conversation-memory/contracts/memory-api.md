@@ -21,41 +21,61 @@
 ```typescript
 interface ProjectSummary {
   readonly projectName: string;
+  readonly categoryPath: MemoryCategoryPath;
   readonly description: string;
   readonly lastUpdatedAt: string;
+  readonly sessionIds: string[];
 }
 ```
 
-**動作**: `~/.claps/memory/projects/` 配下のディレクトリを走査し、
-各 `MEMORY.md` のブロック引用行から description を抽出する。
+**動作**: `~/.claps/memory/` 配下のカテゴリ階層を再帰的に走査し、
+各プロジェクトの `MEMORY.md` ブロック引用行から description を抽出する。
 
-### ReadMemory(projectName: string): ProjectMemoryContent
+### ReadMemory(categoryPath: MemoryCategoryPath): ProjectMemoryContent
 
-指定プロジェクトの MEMORY.md 内容を読み取る。
+指定プロジェクトの MEMORY.md およびセッションメモリを読み取る。
 
 ```typescript
 interface ProjectMemoryContent {
   readonly projectName: string;
-  readonly memoryContent: string;   // MEMORY.md の全文
-  readonly pinnedContent: string;   // pinned.md の全文
-  readonly sizeBytes: number;       // MEMORY.md のバイトサイズ
+  readonly categoryPath: MemoryCategoryPath;
+  readonly memoryContent: string;          // MEMORY.md の全文
+  readonly pinnedContent: string;          // pinned.md の全文
+  readonly sessionMemories: SessionMemoryContent[];
+  readonly totalSizeBytes: number;
+}
+
+interface SessionMemoryContent {
+  readonly sessionId: string;
+  readonly content: string;
+  readonly lastUpdatedAt: string;
 }
 ```
 
 **エラー**: プロジェクトが存在しない場合は `null` を返す。
 
-### CreateProject(projectName: string, description: string): ProjectMemoryContent
+### CreateProject(categoryPath: MemoryCategoryPath, description: string): ProjectMemoryContent
 
 新規プロジェクトのメモリディレクトリおよび初期ファイルを作成する。
+カテゴリ階層のディレクトリが存在しない場合は再帰的に作成する。
 
 **動作**:
-1. `~/.claps/memory/projects/{projectName}/` ディレクトリ作成
+1. `~/.claps/memory/{abstract}/{concrete}/{projectName}/` ディレクトリ作成
 2. MEMORY.md をフォーマット規約に従い初期化
 3. pinned.md を空ファイルとして作成
 4. decisions.md を空ファイルとして作成
 
-**バリデーション**: `projectName` が命名規則に合致すること。
-重複する場合はエラー。
+**バリデーション**: カテゴリ名・`projectName` が命名規則に合致すること。
+同一パスに重複する場合はエラー。
+
+### CreateSessionMemory(categoryPath: MemoryCategoryPath, sessionId: string, source: MemorySource): string
+
+セッション単位のメモリファイル `MEMORY_<session_id>.md` を作成し、
+ファイルパスを返す。MEMORY.md のセッション一覧にも追記する。
+
+### AppendSessionMemory(categoryPath: MemoryCategoryPath, sessionId: string, entry: MemoryEntryInput): void
+
+指定セッションの `MEMORY_<session_id>.md` にエントリを追記する。
 
 ### AppendMemory(projectName: string, entry: MemoryEntryInput): void
 
@@ -106,22 +126,22 @@ LLM ベースのプロジェクト分類を提供する。
 
 シングルトンインスタンスを返す。
 
-### RouteConversation(message: string, currentProject?: string): Promise\<MemoryRoutingResult\>
+### RouteConversation(message: string, currentPath?: MemoryCategoryPath): Promise\<MemoryRoutingResult\>
 
-会話メッセージを分析し、該当プロジェクトを推定する。
+会話メッセージを分析し、該当するカテゴリ階層とプロジェクトを推定する。
 
 **入力**:
 - `message`: ユーザーの会話メッセージ
-- `currentProject`: 現在アクティブなプロジェクト名（省略可能）
+- `currentPath`: 現在アクティブなプロジェクトのパス（省略可能）
 
 **動作**:
-1. `MemoryStore.ListProjects()` でプロジェクトカタログを構築
-2. ルーティングプロンプトを構築
+1. `MemoryStore.ListProjects()` でカテゴリ階層付きカタログを構築
+2. ルーティングプロンプトを構築（カテゴリ階層を含む）
 3. Claude CLI を軽量呼び出しして分類結果を取得
 4. JSON レスポンスをパースして `MemoryRoutingResult` を返す
 
 **エラーハンドリング**:
-- Claude CLI 呼び出し失敗時: `currentProject` があればそれを返す。
+- Claude CLI 呼び出し失敗時: `currentPath` があればそれを返す。
   なければ `confidence: 'low'` で新規作成を提案
 - JSON パース失敗時: 同上
 
@@ -140,11 +160,13 @@ LLM ベースのプロジェクト分類を提供する。
 
 シングルトンインスタンスを返す。
 
-### ShouldSummarize(projectName: string): boolean
+### ShouldSummarize(categoryPath: MemoryCategoryPath): boolean
 
-指定プロジェクトの MEMORY.md が概要化閾値を超えているか判定する。
+指定プロジェクトのメモリファイル群
+（MEMORY.md + MEMORY_*.md）の合計サイズが
+概要化閾値を超えているか判定する。
 
-### Summarize(projectName: string): Promise\<SummarizeResult\>
+### Summarize(categoryPath: MemoryCategoryPath): Promise\<SummarizeResult\>
 
 MEMORY.md を概要化する。
 
@@ -187,7 +209,8 @@ interface SummarizeResult {
 メモリコンテキスト文字列を構築する。
 
 **動作**:
-1. primary プロジェクトの MEMORY.md + pinned.md を読み込み
+1. primary プロジェクトの MEMORY.md + pinned.md +
+   最新セッションの MEMORY_<session_id>.md を読み込み
 2. secondary プロジェクトがある場合、その MEMORY.md の概要部分のみ読み込み
 3. 合計サイズが `maxInjectionSize` を超えないよう切り詰め
 4. フォーマットされたコンテキスト文字列を返す
@@ -219,15 +242,17 @@ interface SummarizeResult {
 1. GetNextTask()
 2. タスク種別判定
 3. [NEW] MemoryRouter.RouteConversation(task.prompt)
-4. [NEW] MemoryInjector.BuildMemoryContext(routingResult)
-5. BuildSlackContext() / BuildGitHubContext()
-6. [MOD] promptWithContext = prompt + channelContext + memoryContext
-7. _claudeRunner.Run(taskId, promptWithContext, options)
-8. RecordTaskCompletion(task, result)
-9. [NEW] MemoryStore.AppendMemory(projectName, entry)
-10. [NEW] if ShouldSummarize(projectName): Summarize(projectName)
-11. [NEW] RecordMemoryEvent(event)
-12. 結果通知
+4. [NEW] MemoryStore.CreateSessionMemory(path, sessionId) (新規セッション時)
+5. [NEW] MemoryInjector.BuildMemoryContext(routingResult)
+6. BuildSlackContext() / BuildGitHubContext()
+7. [MOD] promptWithContext = prompt + channelContext + memoryContext
+8. _claudeRunner.Run(taskId, promptWithContext, options)
+9. RecordTaskCompletion(task, result)
+10. [NEW] MemoryStore.AppendSessionMemory(path, sessionId, entry)
+11. [NEW] MemoryStore.AppendMemory(path, summaryEntry)
+12. [NEW] if ShouldSummarize(path): Summarize(path)
+13. [NEW] RecordMemoryEvent(event)
+14. 結果通知
 ```
 
 ### 変更対象関数
@@ -240,8 +265,10 @@ interface SummarizeResult {
 ### 型定義追加 (`src/types/index.ts`)
 
 - `MemorySource` — 判別共用体
-- `MemoryRoutingResult` — ルーティング結果
+- `MemoryCategory` / `MemoryCategoryPath` — カテゴリ階層
+- `MemoryRoutingResult` — ルーティング結果（カテゴリパス含む）
+- `SessionMemory` / `SessionMemoryContent` — セッション別メモリ
 - `MemoryEvent` / `MemoryEventType` — 履歴記録用
 - `MemoryConfig` — 設定
-- `ProjectSummary` — プロジェクト一覧用
-- `ProjectMemoryContent` — メモリ読み取り結果
+- `ProjectSummary` — プロジェクト一覧用（カテゴリパス含む）
+- `ProjectMemoryContent` — メモリ読み取り結果（セッション群含む）

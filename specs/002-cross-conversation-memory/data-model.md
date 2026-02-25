@@ -5,21 +5,35 @@
 
 ## Entities
 
+### MemoryCategory
+
+記憶の内容に基づく階層分類を表すエンティティ。
+
+| Field | Type | Description |
+|-------|------|-------------|
+| abstractCategory | `string` | 抽象カテゴリ名（例: `development`, `operations`） |
+| concreteCategory | `string` | 具体カテゴリ名（例: `backend`, `frontend`） |
+
+**バリデーション**: 各カテゴリ名は `/^[a-z0-9][a-z0-9-]*[a-z0-9]$/` に適合
+
 ### ProjectMemory
 
 プロジェクト単位のメモリ全体を表すエンティティ。
-`~/.claps/memory/projects/{projectName}/` ディレクトリに対応する。
+`~/.claps/memory/{abstractCategory}/{concreteCategory}/{projectName}/`
+ディレクトリに対応する。
 
 | Field | Type | Description |
 |-------|------|-------------|
 | projectName | `string` | プロジェクトの一意識別子。kebab-case、ASCII のみ |
+| category | `MemoryCategory` | 所属するカテゴリ階層 |
 | description | `string` | プロジェクトの一行概要（カタログ用） |
 | createdAt | `string` (ISO 8601) | プロジェクトメモリの作成日時 |
 | lastUpdatedAt | `string` (ISO 8601) | 最終更新日時 |
 | memoryFilePath | `string` | MEMORY.md の絶対パス |
 | pinnedFilePath | `string` | pinned.md の絶対パス |
+| sessionMemoryFiles | `string[]` | MEMORY_<session_id>.md ファイルパス群 |
 
-**一意性**: `projectName` はグローバルに一意
+**一意性**: カテゴリパス + `projectName` の組み合わせでグローバルに一意
 **バリデーション**: `projectName` は `/^[a-z0-9][a-z0-9-]*[a-z0-9]$/` に適合
 
 ### MemoryEntry
@@ -33,6 +47,24 @@ MEMORY.md 内の個別記憶エントリ。
 | source | `MemorySource` | 記憶の発生元情報 |
 | isSummarized | `boolean` | 概要化済みかどうか |
 | summarizedAt | `string \| null` | 概要化された日時 |
+
+### SessionMemory
+
+セッション単位のメモリファイル `MEMORY_<session_id>.md` を表す。
+Claude CLI のセッション ID と対応し、
+任意のチャネルからセッションを復帰可能にする。
+
+| Field | Type | Description |
+|-------|------|-------------|
+| sessionId | `string` | Claude CLI のセッション ID |
+| projectName | `string` | 所属プロジェクト名 |
+| filePath | `string` | `MEMORY_<session_id>.md` の絶対パス |
+| createdAt | `string` (ISO 8601) | セッションメモリの作成日時 |
+| lastUpdatedAt | `string` (ISO 8601) | 最終更新日時 |
+| platformInfo | `MemorySource` | セッション開始元のプラットフォーム情報 |
+| content | `string` | 対話の経緯・コンテキスト |
+
+**一意性**: `sessionId` はグローバルに一意
 
 ### PinnedEntry
 
@@ -79,13 +111,22 @@ type MemorySource = SlackMemorySource | LineMemorySource
 
 | Field | Type | Description |
 |-------|------|-------------|
-| primary | `string` | 主プロジェクト名 |
-| secondary | `string[]` | 副次的に参照されたプロジェクト名 |
+| primaryPath | `MemoryCategoryPath` | 主プロジェクトのフルパス |
+| secondary | `MemoryCategoryPath[]` | 副次的に参照されたプロジェクトのパス |
 | isNew | `boolean` | 新規プロジェクトかどうか |
 | suggestedName | `string \| null` | 新規時の提案プロジェクト名 |
+| suggestedCategory | `MemoryCategory \| null` | 新規時の提案カテゴリ |
 | suggestedDescription | `string \| null` | 新規時の提案概要 |
 | confidence | `'high' \| 'medium' \| 'low'` | 推定の信頼度 |
 | reasoning | `string` | 判定理由（1 文） |
+
+```typescript
+interface MemoryCategoryPath {
+  readonly abstractCategory: string;
+  readonly concreteCategory: string;
+  readonly projectName: string;
+}
+```
 
 ### MemoryEvent
 
@@ -120,12 +161,14 @@ type MemoryEventType = 'memory_created' | 'memory_updated'
 ## Relationships
 
 ```
-ProjectMemory 1---* MemoryEntry     (MEMORY.md 内)
-ProjectMemory 1---* PinnedEntry     (pinned.md 内)
-ProjectMemory 1---* DetailFile      (detail-*.md)
-MemoryRoutingResult *---1 ProjectMemory (primary)
+MemoryCategory 1---* ProjectMemory     (カテゴリ配下)
+ProjectMemory 1---* SessionMemory      (MEMORY_<session_id>.md)
+ProjectMemory 1---* MemoryEntry        (MEMORY.md 内)
+ProjectMemory 1---* PinnedEntry        (pinned.md 内)
+ProjectMemory 1---* DetailFile         (detail-*.md)
+MemoryRoutingResult *---1 ProjectMemory (primaryPath)
 MemoryRoutingResult *---* ProjectMemory (secondary)
-MemoryEvent *---1 ProjectMemory     (projectName で参照)
+MemoryEvent *---1 ProjectMemory        (projectName で参照)
 ```
 
 ## State Transitions
@@ -157,19 +200,26 @@ MemoryEvent *---1 ProjectMemory     (projectName で参照)
 
 ```
 ~/.claps/memory/
-├── projects/
-│   ├── api-refactoring/
-│   │   ├── MEMORY.md
-│   │   ├── pinned.md
-│   │   ├── decisions.md
-│   │   ├── timeline.md
-│   │   ├── detail-auth-flow.md
-│   │   └── MEMORY.md.bak.1708500000
-│   └── mobile-app-v2/
-│       ├── MEMORY.md
-│       ├── pinned.md
-│       └── decisions.md
-└── (将来の拡張用)
+├── development/                        # 抽象カテゴリ
+│   ├── backend/                        # 具体カテゴリ
+│   │   └── auth-service/               # プロジェクト
+│   │       ├── MEMORY.md               # 目次・概要 + Session ID 一覧
+│   │       ├── MEMORY_abc123.md        # セッション別メモリ
+│   │       ├── MEMORY_def456.md        # セッション別メモリ
+│   │       ├── pinned.md               # 固定記憶（概要化対象外）
+│   │       ├── decisions.md            # 技術的決定事項
+│   │       ├── detail-jwt-design.md    # トピック別詳細
+│   │       └── MEMORY.md.bak.1708500000
+│   └── frontend/
+│       └── dashboard-app/
+│           ├── MEMORY.md
+│           ├── MEMORY_ghi789.md
+│           └── pinned.md
+└── operations/
+    └── infrastructure/
+        └── monitoring-setup/
+            ├── MEMORY.md
+            └── MEMORY_jkl012.md
 ```
 
 ## MEMORY.md フォーマット規約
@@ -180,6 +230,10 @@ MemoryEvent *---1 ProjectMemory     (projectName で参照)
 
 ## 概要
 {2-3 sentence summary of the project's current state}
+
+## セッション
+- [MEMORY_abc123.md](./MEMORY_abc123.md) - 認証フロー設計セッション
+- [MEMORY_def456.md](./MEMORY_def456.md) - JWT実装セッション
 
 ## 重要事項
 - {key fact 1}
@@ -193,6 +247,29 @@ MemoryEvent *---1 ProjectMemory     (projectName で参照)
 - [概要化: 2026-02-15] 過去のAPIレビュー議論の概要
 - [2026-02-20] 認証方式をJWTに変更決定
 - [2026-02-21] フロントエンドのログイン画面を実装
+
+[最終更新: 2026-02-21]
+```
+
+## MEMORY_<session_id>.md フォーマット規約
+
+```markdown
+# Session: {session_id}
+> {session description}
+
+## セッション情報
+- **Session ID**: {session_id}
+- **開始日時**: {created_at}
+- **開始チャネル**: {channel} ({channel_specific_id})
+- **プロジェクト**: {project-name}
+
+## 対話の経緯
+- [2026-02-20] 認証方式についてJWT vs セッションベースを検討
+- [2026-02-20] JWTに決定（理由: ステートレスでスケール容易）
+
+## プラットフォーム固有情報
+- Slack: channel=C04SJ5HPZ6W, thread_ts=1771657100.287169
+- LINE: groupId=Cab123...
 
 [最終更新: 2026-02-21]
 ```

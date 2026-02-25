@@ -25,7 +25,8 @@
 ```
 [Slack] ユーザー: @claps プロジェクトAのAPIエンドポイントを整理して
 → CLAPS がタスクを実行し、結果を通知
-→ メモリが自動的に ~/.claps/memory/projects/project-a/ に記録
+→ メモリが自動的に ~/.claps/memory/development/backend/project-a/ に記録
+→ セッション別メモリ MEMORY_<session_id>.md も作成
 ```
 
 ### 2. チャネル横断での記憶参照
@@ -66,16 +67,24 @@ Slack で指示した内容を LINE から確認できます。
 
 ```
 ~/.claps/memory/
-└── projects/
-    ├── project-a/
-    │   ├── MEMORY.md        # 目次・概要
-    │   ├── pinned.md        # 固定記憶
-    │   ├── decisions.md     # 技術的決定事項
-    │   └── detail-*.md      # トピック別詳細
-    └── project-b/
-        ├── MEMORY.md
-        └── pinned.md
+├── development/                # 抽象カテゴリ
+│   └── backend/                # 具体カテゴリ
+│       └── project-a/          # プロジェクト
+│           ├── MEMORY.md       # 目次・概要 + Session ID 一覧
+│           ├── MEMORY_abc123.md # セッション別メモリ
+│           ├── pinned.md       # 固定記憶
+│           ├── decisions.md    # 技術的決定事項
+│           └── detail-*.md     # トピック別詳細
+└── operations/
+    └── infrastructure/
+        └── project-b/
+            ├── MEMORY.md
+            ├── MEMORY_def456.md
+            └── pinned.md
 ```
+
+記憶の内容に基づいて「抽象カテゴリ → 具体カテゴリ → Project」の
+階層で自動的に分類されます。上位ほど抽象的、下位ほど具体的な概念です。
 
 ## 設定
 
@@ -91,8 +100,8 @@ Slack で指示した内容を LINE から確認できます。
 
 1. **メモリ蓄積の確認**:
    Slack で任意のタスクを実行後、
-   `ls ~/.claps/memory/projects/` で
-   プロジェクトディレクトリが作成されていることを確認
+   `find ~/.claps/memory/ -name MEMORY.md` で
+   カテゴリ階層配下にプロジェクトが作成されていることを確認
 
 2. **チャネル横断の確認**:
    Slack で情報を伝えた後、LINE から同じ情報について質問し、

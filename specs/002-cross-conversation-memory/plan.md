@@ -7,8 +7,9 @@
 
 チャネル（Slack、LINE等）およびスレッドを横断して
 プロジェクト単位の記憶を蓄積・参照する階層的メモリシステムを実装する。
-Agent Skills のディレクトリ構造に着想を得た `MEMORY.md` ベースの
-階層構造、LLM ベースのプロジェクトルーティング、
+記憶の内容に基づく「抽象カテゴリ → 具体カテゴリ → Project」の
+階層構造、セッション単位のメモリファイル（`MEMORY_<session_id>.md`）
+による Claude CLI セッション復帰、LLM ベースのルーティング、
 および概要化によるコンテキストウィンドウ保護を
 既存のタスク実行パイプラインに統合する。
 
@@ -68,8 +69,8 @@ specs/002-cross-conversation-memory/
 ```text
 src/
 ├── memory/
-│   ├── router.ts        # MemoryRouter: LLMベースプロジェクト分類
-│   ├── store.ts         # MemoryStore: メモリファイルCRUD操作
+│   ├── router.ts        # MemoryRouter: LLMベースカテゴリ・プロジェクト分類
+│   ├── store.ts         # MemoryStore: カテゴリ階層+セッション別CRUD操作
 │   ├── summarizer.ts    # MemorySummarizer: 概要化・圧縮処理
 │   └── injector.ts      # MemoryInjector: プロンプトへのメモリ注入
 ├── types/
