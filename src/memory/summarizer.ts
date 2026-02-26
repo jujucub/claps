@@ -246,6 +246,9 @@ ${content}
       const claudeRunner = GetClaudeRunner();
       const result = await claudeRunner.Run(`memory-summarize-${Date.now()}`, prompt, {
         workingDirectory: GetWorkspacePath(),
+        timeout: 60000,      // 60秒タイムアウト（概要化はルーティングより重い）
+        maxTurns: 1,         // 1ターンで完了
+        sanitizeEnv: true,   // Slack関連env変数を除外してMCPサーバーの不要な起動を防ぐ
       });
 
       if (result.success && result.output.trim()) {

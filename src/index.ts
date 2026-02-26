@@ -155,6 +155,7 @@ async function HandleSlackMention(
   metadata: SlackTaskMetadata,
   prompt: string
 ): Promise<void> {
+  console.log(`HandleSlackMention called: prompt="${prompt.slice(0, 50)}", thread=${metadata.threadTs}, user=${metadata.userId}`);
   if (!_taskQueue || !_config) return;
 
   // タスクをキューに追加
@@ -242,6 +243,7 @@ function OnTaskAdded(_task: Task): void {
  * 次のタスクを処理する
  */
 async function ProcessNextTask(): Promise<void> {
+  console.log(`ProcessNextTask called: isProcessing=${_isProcessing}, isRunning=${_isRunning}, pendingTasks=${_taskQueue?.GetPendingCount() ?? 'N/A'}`);
   if (!_taskQueue || !_claudeRunner || !_config) return;
   if (_isProcessing) return;
   if (!_isRunning) return;
@@ -970,7 +972,9 @@ async function BuildMemoryContextForTask(
     const source = BuildMemorySource(task);
 
     // ルーティング
+    console.log(`BuildMemoryContextForTask: starting RouteConversation for task ${task.id}`);
     const routingResult = await router.RouteConversation(task.prompt);
+    console.log(`BuildMemoryContextForTask: RouteConversation completed for task ${task.id}, project=${routingResult.primaryPath.projectName}, confidence=${routingResult.confidence}`);
 
     // 新規プロジェクトの場合は作成
     if (routingResult.isNew) {

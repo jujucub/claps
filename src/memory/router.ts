@@ -51,6 +51,9 @@ export class MemoryRouter {
       const claudeRunner = GetClaudeRunner();
       const result = await claudeRunner.Run(`memory-route-${Date.now()}`, prompt, {
         workingDirectory: GetWorkspacePath(),
+        timeout: 30000,      // 30秒タイムアウト（ルーティングは軽量な分類タスク）
+        maxTurns: 1,         // 1ターンで完了
+        sanitizeEnv: true,   // Slack関連env変数を除外してMCPサーバーの不要な起動を防ぐ
       });
 
       if (!result.success) {
