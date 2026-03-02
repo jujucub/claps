@@ -903,27 +903,6 @@ function GetRequestedBySlackId(task: Task): string | undefined {
 }
 
 /**
- * 「覚えておいて」パターンを検出し、固定記憶の内容を抽出する (T021)
- */
-function DetectPinnedContent(prompt: string): string | null {
-  // 「覚えておいて」「覚えて」「remember」パターンを検出
-  const patterns = [
-    /覚えておいて[：:\s]*(.+)/,
-    /覚えて[：:\s]*(.+)/,
-    /remember[：:\s]*(.+)/i,
-  ];
-
-  for (const pattern of patterns) {
-    const match = prompt.match(pattern);
-    if (match?.[1]) {
-      return match[1].trim();
-    }
-  }
-
-  return null;
-}
-
-/**
  * タスクメタデータからメモリソースを構築する
  */
 function BuildMemorySource(task: Task): MemorySource {
@@ -989,15 +968,14 @@ async function BuildMemoryContextForTask(
       }, GetUserId(task));
     }
 
-    // 「覚えておいて」検出 (T021)
-    const pinnedContent = DetectPinnedContent(task.prompt);
-    if (pinnedContent) {
+    // 固定記憶検出（LLMベース）
+    if (routingResult.pinnedContent) {
       store.AppendPinned(routingResult.primaryPath, {
-        content: pinnedContent,
+        content: routingResult.pinnedContent,
         originalPrompt: task.prompt.slice(0, 200),
         source,
       });
-      console.log(`Memory: Pinned content detected and saved for ${routingResult.primaryPath.projectName}`);
+      console.log(`Memory: Pinned content detected by LLM and saved for ${routingResult.primaryPath.projectName}`);
     }
 
     // セッションメモリを作成（新規セッション）

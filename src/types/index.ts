@@ -277,6 +277,7 @@ export interface MemoryRoutingResult {
   readonly suggestedDescription: string | null;
   readonly confidence: 'high' | 'medium' | 'low';
   readonly reasoning: string;
+  readonly pinnedContent: string | null;
 }
 
 // セッションメモリの内容

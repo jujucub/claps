@@ -132,6 +132,7 @@ ${message}
 2. メッセージが他のプロジェクトも参照している場合（例: 「プロジェクトBのあの実装を参考にしたい」）、それらを **secondary** 配列に含めてください
 3. 既存プロジェクトに該当しない場合は isNew=true として新規プロジェクトを提案してください
 4. 新規プロジェクト名は kebab-case（/^[a-z0-9][a-z0-9-]*[a-z0-9]$/）で、カテゴリは記憶の内容に基づく抽象→具体の2階層で提案してください
+5. **固定記憶の検出**: ユーザーが情報の永続的な記憶を依頼している場合、**pinnedContent** に記憶すべき具体的な内容を抽出してください。例: 「覚えておいて」「メモリに入れておいて」「記録して」「保存しておいて」「忘れないで」「remember」「save this」「keep in mind」など。指示部分は除外し、記憶すべき内容のみを入れてください。記憶リクエストでなければ null にしてください。
 
 ## 信頼度の判定基準
 - **high**: メッセージが明確に特定のプロジェクトに関連している
@@ -153,7 +154,8 @@ ${message}
   "suggestedCategory": null,
   "suggestedDescription": null,
   "confidence": "high",
-  "reasoning": "メッセージがauth-serviceプロジェクトに直接関連"
+  "reasoning": "メッセージがauth-serviceプロジェクトに直接関連",
+  "pinnedContent": null
 }
 \`\`\`
 
@@ -205,6 +207,7 @@ JSONのみを出力してください。JSONの前後に説明文は不要です
         suggestedDescription: parsed.suggestedDescription ?? null,
         confidence: parsed.confidence ?? 'medium',
         reasoning: parsed.reasoning ?? '',
+        pinnedContent: typeof parsed.pinnedContent === 'string' ? parsed.pinnedContent : null,
       };
     } catch (error) {
       console.error('Failed to parse routing response:', error);
@@ -253,6 +256,7 @@ JSONのみを出力してください。JSONの前後に説明文は不要です
         suggestedDescription: null,
         confidence: 'medium',
         reasoning: '前回のプロジェクトにフォールバック',
+        pinnedContent: null,
       };
     }
 
@@ -287,6 +291,7 @@ JSONのみを出力してください。JSONの前後に説明文は不要です
       suggestedDescription: message.slice(0, 100),
       confidence: 'low',
       reasoning: '既存プロジェクトなし、新規作成を提案',
+      pinnedContent: null,
     };
   }
 }

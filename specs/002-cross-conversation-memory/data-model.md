@@ -119,6 +119,7 @@ type MemorySource = SlackMemorySource | LineMemorySource
 | suggestedDescription | `string \| null` | 新規時の提案概要 |
 | confidence | `'high' \| 'medium' \| 'low'` | 推定の信頼度 |
 | reasoning | `string` | 判定理由（1 文） |
+| pinnedContent | `string \| null` | LLMが抽出した固定記憶内容（記憶リクエストでなければ null） |
 
 ```typescript
 interface MemoryCategoryPath {

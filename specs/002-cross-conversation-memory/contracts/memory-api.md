@@ -137,8 +137,8 @@ LLM ベースのプロジェクト分類を提供する。
 **動作**:
 1. `MemoryStore.ListProjects()` でカテゴリ階層付きカタログを構築
 2. ルーティングプロンプトを構築（カテゴリ階層を含む）
-3. Claude CLI を軽量呼び出しして分類結果を取得
-4. JSON レスポンスをパースして `MemoryRoutingResult` を返す
+3. Claude CLI を軽量呼び出しして分類結果を取得（固定記憶の検出も同時に実行）
+4. JSON レスポンスをパースして `MemoryRoutingResult` を返す（`pinnedContent` フィールドにLLMが抽出した固定記憶内容を含む）
 
 **エラーハンドリング**:
 - Claude CLI 呼び出し失敗時: `currentPath` があればそれを返す。
@@ -266,7 +266,7 @@ interface SummarizeResult {
 
 - `MemorySource` — 判別共用体
 - `MemoryCategory` / `MemoryCategoryPath` — カテゴリ階層
-- `MemoryRoutingResult` — ルーティング結果（カテゴリパス含む）
+- `MemoryRoutingResult` — ルーティング結果（カテゴリパス含む、固定記憶検出結果を含む）
 - `SessionMemory` / `SessionMemoryContent` — セッション別メモリ
 - `MemoryEvent` / `MemoryEventType` — 履歴記録用
 - `MemoryConfig` — 設定
