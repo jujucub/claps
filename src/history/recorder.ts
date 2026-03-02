@@ -9,6 +9,7 @@ import type {
   WorkHistoryRecord,
   SlackTaskMetadata,
   GitHubTaskMetadata,
+  MemoryEvent,
 } from '../types/index.js';
 import { GetHistoryStore } from './store.js';
 import { GetSlackUserForGitHub } from '../admin/store.js';
@@ -105,6 +106,26 @@ export function RecordTaskCompletion(task: Task, result: TaskResult): void {
     issueNumber,
     prUrl: result.prUrl,
     summary: TruncateSummary(result.output),
+  };
+
+  const historyStore = GetHistoryStore();
+  historyStore.Append(record);
+}
+
+/**
+ * メモリイベントを作業履歴に記録する
+ */
+export function RecordMemoryEvent(event: MemoryEvent, userId: string): void {
+  const record: WorkHistoryRecord = {
+    id: `memory-${event.type}-${Date.now()}`,
+    timestamp: event.timestamp,
+    source: 'slack', // メモリイベントはタスクソースに依存しない
+    userId,
+    prompt: '',
+    result: 'success',
+    duration: 0,
+    summary: `[Memory] ${event.type}: ${event.details}`,
+    memoryEvent: event,
   };
 
   const historyStore = GetHistoryStore();
