@@ -21,7 +21,7 @@ let _currentConfig: Config | undefined;
 let _currentOnIssueFound:
   | ((metadata: GitHubTaskMetadata, prompt: string) => Promise<void>)
   | undefined;
-let _state: PollerState = {
+const _state: PollerState = {
   isRunning: false,
   intervalId: null,
   lastPollTime: null,
@@ -35,7 +35,7 @@ const _processedIssues = new Set<string>();
  */
 export function UpdateAllowedUsers(githubUsers: readonly string[]): void {
   if (!_allowedUsers) {
-    _allowedUsers = { github: githubUsers, slack: [] };
+    _allowedUsers = { github: githubUsers, slack: [], line: [], http: [] };
   } else {
     _allowedUsers = {
       ..._allowedUsers,

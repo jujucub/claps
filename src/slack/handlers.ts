@@ -53,7 +53,7 @@ function IsAdmin(userId: string): boolean {
  */
 export function UpdateAllowedUsers(slackUsers: readonly string[]): void {
   if (!_allowedUsers) {
-    _allowedUsers = { github: [], slack: slackUsers };
+    _allowedUsers = { github: [], slack: slackUsers, line: [], http: [] };
   } else {
     _allowedUsers = {
       ..._allowedUsers,
@@ -856,46 +856,52 @@ export function RegisterSlackHandlers(
 
   // @bot メンションの処理
   app.event('app_mention', async ({ event, say }) => {
-    const text = event.text;
-    const userId = event.user ?? 'unknown';
-    const threadTs = event.thread_ts ?? event.ts;
+    console.log(`[app_mention] Event received: user=${event.user}, channel=${event.channel}, text="${event.text?.slice(0, 50)}"`);
 
-    // ホワイトリストチェック
-    if (!IsUserAllowed(userId)) {
-      console.log(`Denied Slack request from ${userId} (not in whitelist)`);
+    try {
+      const text = event.text;
+      const userId = event.user ?? 'unknown';
+      const threadTs = event.thread_ts ?? event.ts;
+
+      // ホワイトリストチェック
+      if (!IsUserAllowed(userId)) {
+        console.log(`Denied Slack request from ${userId} (not in whitelist)`);
+        await say({
+          text: 'このリクエストは処理できませんでした。',
+          thread_ts: threadTs,
+        });
+        return;
+      }
+
+      // @bot を除いた指示テキスト
+      const prompt = text.replace(/<@[A-Z0-9]+>/g, '').trim();
+
+      if (!prompt) {
+        await say({
+          text: Msg('mention.emptyPrompt'),
+          thread_ts: threadTs,
+        });
+        return;
+      }
+
+      // スレッドで処理開始を通知
       await say({
-        text: 'このリクエストは処理できませんでした。',
+        text: Msg('mention.start'),
         thread_ts: threadTs,
       });
-      return;
+
+      const metadata: SlackTaskMetadata = {
+        source: 'slack',
+        channelId: event.channel,
+        threadTs,
+        userId,
+        messageText: text,
+      };
+
+      await onMention(metadata, prompt);
+    } catch (error) {
+      console.error('[app_mention] Error handling mention event:', error);
     }
-
-    // @bot を除いた指示テキスト
-    const prompt = text.replace(/<@[A-Z0-9]+>/g, '').trim();
-
-    if (!prompt) {
-      await say({
-        text: Msg('mention.emptyPrompt'),
-        thread_ts: threadTs,
-      });
-      return;
-    }
-
-    // スレッドで処理開始を通知
-    await say({
-      text: Msg('mention.start'),
-      thread_ts: threadTs,
-    });
-
-    const metadata: SlackTaskMetadata = {
-      source: 'slack',
-      channelId: event.channel,
-      threadTs,
-      userId,
-      messageText: text,
-    };
-
-    await onMention(metadata, prompt);
   });
 
   // 承認ボタンのクリック処理（モーダルを開く）
@@ -1321,6 +1327,8 @@ export function RegisterSlackHandlers(
       reflectionStore.UpdateSuggestionStatus(suggestionId, 'executing');
     }
   });
+
+  console.log('RegisterSlackHandlers: All handlers registered successfully');
 }
 
 /**

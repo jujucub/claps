@@ -63,7 +63,7 @@ export async function GetOrCloneRepo(
       console.log(`Fetched repo: ${owner}/${repo}`);
     } catch (error) {
       console.error(`Failed to fetch repo: ${error}`);
-      throw new Error(`Failed to fetch repository ${owner}/${repo}`);
+      throw new Error(`Failed to fetch repository ${owner}/${repo}`, { cause: error });
     }
   } else {
     // クローンする
@@ -82,7 +82,7 @@ export async function GetOrCloneRepo(
       console.log(`Cloned repo: ${owner}/${repo} to ${repoPath}`);
     } catch (error) {
       console.error(`Failed to clone repo: ${error}`);
-      throw new Error(`Failed to clone repository ${owner}/${repo}`);
+      throw new Error(`Failed to clone repository ${owner}/${repo}`, { cause: error });
     }
   }
 

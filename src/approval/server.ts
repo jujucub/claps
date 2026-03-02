@@ -10,9 +10,8 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import type { App } from '@slack/bolt';
-import type { HookInput, HookOutput } from '../types/index.js';
-import { RequestApproval, AskQuestion, NotifyWorkLog } from '../slack/handlers.js';
+import type { HookInput, HookOutput, TaskMetadata } from '../types/index.js';
+import type { NotificationRouter } from '../channel/router.js';
 
 // サーバー状態
 let _server: Server | undefined;
@@ -23,9 +22,8 @@ let _authToken: string | undefined;
 const AUTH_TOKEN_DIR = path.join(os.homedir(), '.claps');
 const AUTH_TOKEN_FILE = path.join(AUTH_TOKEN_DIR, 'auth-token');
 
-// Slack Bot への参照（承認リクエスト送信用）
-let _slackApp: App | undefined;
-let _slackChannelId: string | undefined;
+// 通知ルーターへの参照（承認リクエスト送信用）
+let _router: NotificationRouter | undefined;
 
 /**
  * 認証トークンを生成してファイルに保存する
@@ -56,6 +54,12 @@ function AuthMiddleware(req: Request, res: Response, next: NextFunction): void {
     return;
   }
 
+  // /api/v1/ 配下は HTTP アダプタ側の認証ミドルウェアに委譲
+  if (req.path.startsWith('/api/v1/')) {
+    next();
+    return;
+  }
+
   const token = req.headers['x-auth-token'] as string | undefined;
 
   if (!token || !_authToken) {
@@ -80,8 +84,8 @@ function AuthMiddleware(req: Request, res: Response, next: NextFunction): void {
 
 // 現在のタスクID（承認リクエストに紐付ける）
 let _currentTaskId: string | undefined;
-let _currentThreadTs: string | undefined;
-let _currentRequestedBySlackId: string | undefined;
+let _currentTaskMetadata: TaskMetadata | undefined;
+let _currentRequestedByUserId: string | undefined;
 
 // 現在のタスクで許可されたツール+内容キー（同一内容のみ自動許可）
 // Bash: "Bash:<command>", Write: "Write:<filePath>", Edit: "Edit:<filePath>"
@@ -98,11 +102,9 @@ let _lastWorkLogTime = 0;
  * 承認サーバーを初期化する
  */
 export function InitApprovalServer(
-  slackApp: App,
-  channelId: string
+  router: NotificationRouter
 ): Express {
-  _slackApp = slackApp;
-  _slackChannelId = channelId;
+  _router = router;
 
   // 認証トークンを生成
   _authToken = GenerateAuthToken();
@@ -165,8 +167,8 @@ export function InitApprovalServer(
         context?: string;
       };
 
-      if (!_slackApp || !_slackChannelId) {
-        res.status(500).json({ error: 'Slack not configured' });
+      if (!_router || !_currentTaskMetadata) {
+        res.status(500).json({ error: 'Router or task metadata not configured' });
         return;
       }
 
@@ -184,11 +186,10 @@ export function InitApprovalServer(
         ? options
         : ['はい', 'いいえ', 'わからない'];
 
-      const answer = await AskQuestion(
-        _slackApp,
-        _slackChannelId,
-        requestId,
+      const answer = await _router.askQuestion(
         taskId,
+        _currentTaskMetadata,
+        requestId,
         fullQuestion,
         finalOptions
       );
@@ -200,6 +201,13 @@ export function InitApprovalServer(
     }
   });
 
+  return _app;
+}
+
+/**
+ * Express アプリインスタンスを取得する（HTTP アダプタがルートをマウントするため）
+ */
+export function GetExpressApp(): Express | undefined {
   return _app;
 }
 
@@ -278,12 +286,12 @@ async function HandleApprovalRequest(hookInput: HookInput): Promise<HookOutput> 
     };
   }
 
-  // Slack に承認リクエストを送信
-  if (!_slackApp || !_slackChannelId) {
-    console.error('Slack not configured for approval');
+  // ルーター経由で承認リクエストを送信
+  if (!_router || !_currentTaskMetadata) {
+    console.error('Router or task metadata not configured for approval');
     return {
       permissionDecision: 'deny',
-      message: 'Slack not configured',
+      message: 'Router not configured',
     };
   }
 
@@ -294,15 +302,13 @@ async function HandleApprovalRequest(hookInput: HookInput): Promise<HookOutput> 
   console.log(`Requesting approval for: ${tool_name}`);
 
   try {
-    const result = await RequestApproval(
-      _slackApp,
-      _slackChannelId,
-      requestId,
+    const result = await _router.requestApproval(
       taskId,
+      _currentTaskMetadata,
+      requestId,
       tool_name,
       command,
-      _currentThreadTs,
-      _currentRequestedBySlackId
+      _currentRequestedByUserId
     );
 
     let message = result.decision === 'allow' ? 'Approved by user' : 'Denied by user';
@@ -329,12 +335,12 @@ async function HandleApprovalRequest(hookInput: HookInput): Promise<HookOutput> 
 }
 
 /**
- * ツール使用通知を処理し、Slackに作業ログを投稿する
+ * ツール使用通知を処理し、チャネルに作業ログを投稿する
  */
 async function HandleToolNotification(hookInput: HookInput): Promise<void> {
   const { tool_name, tool_input } = hookInput;
 
-  if (!_slackApp || !_slackChannelId || !_currentThreadTs) {
+  if (!_router || !_currentTaskMetadata) {
     return;
   }
 
@@ -348,18 +354,12 @@ async function HandleToolNotification(hookInput: HookInput): Promise<void> {
   // ツール名に対応するメッセージを生成
   const message = GetToolMessage(tool_name);
   const details = GetToolDetails(tool_name, tool_input);
+  const taskId = _currentTaskId ?? 'unknown';
 
   try {
-    await NotifyWorkLog(
-      _slackApp,
-      _slackChannelId,
-      'tool_start',
-      message,
-      details,
-      _currentThreadTs
-    );
+    await _router.notifyWorkLog(taskId, _currentTaskMetadata, 'tool_start', message, details);
   } catch (error) {
-    console.error('Failed to post tool notification to Slack:', error);
+    console.error('Failed to post tool notification:', error);
   }
 }
 
@@ -411,53 +411,86 @@ function GetToolDetails(toolName: string, toolInput: Record<string, unknown>): s
 }
 
 /**
- * 承認が必要なツール
- * これらのツールはファイル変更やコマンド実行など副作用を伴うため、
- * 初回使用時にSlack承認を求める（内容が変わる場合は再承認）
+ * 危険なBashコマンドパターン
+ * これらにマッチする場合のみSlack承認を求める
+ * それ以外のコマンド（git status, npm run build 等）は自動承認される
  */
-const TOOLS_REQUIRING_APPROVAL = new Set([
-  'Bash',
-  'Write',
-  'Edit',
-  'Task',
-  'NotebookEdit',
-]);
+const DANGEROUS_BASH_PATTERNS: RegExp[] = [
+  // ファイル削除・移動系（上書きリスクを含む）
+  /\brm\s/,
+  /\bmv\s/,
+  // Git リモート操作・破壊的操作
+  /\bgit\s+push\b/,
+  /\bgit\s+reset\s+--hard\b/,
+  /\bgit\s+clean\s+-[a-zA-Z]*f/,
+  /\bgit\s+checkout\s+\.\s*$/,
+  /\bgit\s+restore\s+\.\s*$/,
+  /\bgit\s+branch\s+-[a-zA-Z]*D/,
+  /\bgit\s+rebase\b/,
+  // パッケージ公開
+  /\bnpm\s+publish\b/,
+  // 危険なパイプ実行
+  /\bcurl\b.*\|\s*(bash|sh)\b/,
+  /\bwget\b.*\|\s*(bash|sh)\b/,
+  // 権限・システム操作
+  /\bsudo\b/,
+  /\bchmod\b/,
+  /\bchown\b/,
+  /\bmkfs\b/,
+  /\bdd\s+if=/,
+  // SQL 破壊的操作
+  /\b(DROP|DELETE\s+FROM|TRUNCATE|ALTER)\s/i,
+  // プロセス停止
+  /\bkill\s+-9\b/,
+  /\bkillall\b/,
+  // Docker 破壊的操作
+  /\bdocker\s+(rm|rmi|system\s+prune)\b/,
+];
+
+/**
+ * Bashコマンドが危険かどうかを判定する
+ */
+function IsDangerousBashCommand(command: string): boolean {
+  return DANGEROUS_BASH_PATTERNS.some(pattern => pattern.test(command));
+}
 
 /**
  * 自動承認のキーを生成する
- * Claude Code の標準動作に合わせ、ツール内容が変わる場合は再承認を要求する
- * - Bash: コマンド文字列で識別
- * - Write/Edit: ファイルパスで識別
- * - Task/NotebookEdit: ツール名のみ
+ * 危険なBashコマンドが承認された場合、ベースコマンド単位でキーを生成し
+ * 同系統のコマンドは再承認不要にする
+ * 例: "git push origin main" → "Bash:git push"
  */
 function GetApprovalKey(
   toolName: string,
   toolInput: Record<string, unknown>
 ): string {
   if (toolName === 'Bash') {
-    const command = String(toolInput['command'] ?? '');
-    return `Bash:${command}`;
+    const command = String(toolInput['command'] ?? '').trim();
+    // ベースコマンド（最初の2トークン）をキーにする
+    // 例: "git push origin main" → "git push"
+    const tokens = command.split(/\s+/);
+    const baseCommand = tokens.slice(0, 2).join(' ');
+    return `Bash:${baseCommand}`;
   }
-  if (toolName === 'Write') {
-    const filePath = String(toolInput['file_path'] ?? '');
-    return `Write:${filePath}`;
-  }
-  if (toolName === 'Edit') {
-    const filePath = String(toolInput['file_path'] ?? '');
-    return `Edit:${filePath}`;
-  }
-  // Task, NotebookEdit 等はツール名のみ
+  // Write, Edit, Task 等はツール名のみ
   return toolName;
 }
 
 /**
  * 承認が必要かどうかを判定する
+ * - Bash: 危険なコマンドパターンにマッチする場合のみ承認が必要
+ * - Write/Edit/Task/NotebookEdit: 自動承認（コーディング作業の中核ツール）
  */
 function CheckNeedsApproval(
   toolName: string,
-  _toolInput: Record<string, unknown>
+  toolInput: Record<string, unknown>
 ): boolean {
-  return TOOLS_REQUIRING_APPROVAL.has(toolName);
+  if (toolName === 'Bash') {
+    const command = String(toolInput['command'] ?? '');
+    return IsDangerousBashCommand(command);
+  }
+  // Write, Edit, Task, NotebookEdit は自動承認
+  return false;
 }
 
 /**
@@ -489,16 +522,16 @@ function FormatCommand(
 }
 
 /**
- * 現在のタスクIDを設定する
+ * 現在のタスクIDとメタデータを設定する
  */
 export function SetCurrentTaskId(
   taskId: string,
-  threadTs?: string,
-  requestedBySlackId?: string
+  metadata: TaskMetadata,
+  requestedByUserId?: string
 ): void {
   _currentTaskId = taskId;
-  _currentThreadTs = threadTs;
-  _currentRequestedBySlackId = requestedBySlackId;
+  _currentTaskMetadata = metadata;
+  _currentRequestedByUserId = requestedByUserId;
   // 新しいタスクでは許可済みツールをリセット
   _allowedKeysForTask.clear();
 }
@@ -508,8 +541,8 @@ export function SetCurrentTaskId(
  */
 export function ClearCurrentTaskId(): void {
   _currentTaskId = undefined;
-  _currentThreadTs = undefined;
-  _currentRequestedBySlackId = undefined;
+  _currentTaskMetadata = undefined;
+  _currentRequestedByUserId = undefined;
   _allowedKeysForTask.clear();
   _autoApproveCounter.clear();
   _lastWorkLogTime = 0;

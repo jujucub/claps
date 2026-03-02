@@ -129,6 +129,25 @@ export class ReflectionStore {
   }
 
   /**
+   * 指定ユーザーの保留中・実行中の提案を取得する
+   */
+  GetPendingSuggestions(userId: string): readonly TaskSuggestion[] {
+    const latest = this.GetLatest();
+    if (!latest) {
+      return [];
+    }
+
+    const userReflection = latest.userReflections.find((r) => r.userId === userId);
+    if (!userReflection) {
+      return [];
+    }
+
+    return userReflection.suggestions.filter(
+      (s) => s.status === 'pending' || s.status === 'executing'
+    );
+  }
+
+  /**
    * IDで提案を取得する
    */
   GetSuggestion(suggestionId: string): { suggestion: TaskSuggestion; userId: string } | undefined {

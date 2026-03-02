@@ -6,7 +6,7 @@ import * as dotenv from 'dotenv';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import type { Config, AllowedUsers, ReflectionConfig, MemoryConfig } from './types/index.js';
+import type { Config, AllowedUsers, ChannelConfig, ReflectionConfig, MemoryConfig } from './types/index.js';
 import { LoadAdminConfig, HasAdminConfig } from './admin/store.js';
 
 // ~/.claps/.env を優先的に読み込む（存在する場合）
@@ -84,6 +84,8 @@ export function LoadConfig(): Config {
       slack: adminConfig.allowedSlackUsers.length > 0
         ? adminConfig.allowedSlackUsers
         : ParseCommaSeparatedList(process.env['ALLOWED_SLACK_USERS']),
+      line: ParseCommaSeparatedList(process.env['ALLOWED_LINE_USERS']),
+      http: ParseCommaSeparatedList(process.env['ALLOWED_HTTP_DEVICES']),
     };
 
     githubRepos = adminConfig.githubRepos.length > 0
@@ -94,6 +96,8 @@ export function LoadConfig(): Config {
     allowedUsers = {
       github: ParseCommaSeparatedList(process.env['ALLOWED_GITHUB_USERS']),
       slack: ParseCommaSeparatedList(process.env['ALLOWED_SLACK_USERS']),
+      line: ParseCommaSeparatedList(process.env['ALLOWED_LINE_USERS']),
+      http: ParseCommaSeparatedList(process.env['ALLOWED_HTTP_DEVICES']),
     };
     githubRepos = envGithubRepos;
   }
@@ -105,6 +109,24 @@ export function LoadConfig(): Config {
   if (allowedUsers.slack.length === 0) {
     console.warn('⚠️ ALLOWED_SLACK_USERS is empty - all Slack requests will be denied');
   }
+
+  // LINE チャネル設定（環境変数が設定されている場合のみ有効）
+  const lineChannelSecret = process.env['LINE_CHANNEL_SECRET'];
+  const lineChannelToken = process.env['LINE_CHANNEL_TOKEN'];
+  const lineWebhookPort = parseInt(process.env['LINE_WEBHOOK_PORT'] ?? '3002', 10);
+
+  // HTTP チャネル設定
+  const httpChannelEnabled = process.env['HTTP_CHANNEL_ENABLED'] === 'true';
+  const httpChannelPort = parseInt(process.env['HTTP_CHANNEL_PORT'] ?? '0', 10) || undefined;
+
+  const channelConfig: ChannelConfig = {
+    line: lineChannelSecret && lineChannelToken
+      ? { channelSecret: lineChannelSecret, channelToken: lineChannelToken, webhookPort: lineWebhookPort }
+      : undefined,
+    http: httpChannelEnabled
+      ? { enabled: true, port: httpChannelPort }
+      : undefined,
+  };
 
   // 内省機能の設定
   const reflectionConfig: ReflectionConfig = {
@@ -137,6 +159,7 @@ export function LoadConfig(): Config {
     githubPollInterval,
     allowedUsers,
     reflectionConfig,
+    channelConfig,
     memoryConfig,
   };
 }

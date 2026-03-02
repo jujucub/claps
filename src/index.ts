@@ -1,28 +1,14 @@
 /**
  * claps - メインエントリーポイント
- * GitHub Issue / Slack 連携 Claude 自動対応システム
+ * GitHub Issue / 各チャネル連携 Claude 自動対応システム
  */
 
 import { LoadConfig } from './config.js';
-import type { App } from '@slack/bolt';
-import type { Config, GitHubTaskMetadata, SlackTaskMetadata, Task } from './types/index.js';
+import type { Config, GitHubTaskMetadata, SlackTaskMetadata, LineTaskMetadata, HttpTaskMetadata, TaskMetadata, Task } from './types/index.js';
 import { GetTaskQueue, type TaskQueue } from './queue/taskQueue.js';
 import { GetClaudeRunner, type ClaudeRunner, type WorkLog } from './claude/runner.js';
 import { GetSessionStore } from './session/store.js';
-import {
-  InitSlackBot,
-  StartSlackBot,
-  StopSlackBot,
-  GetSlackBot,
-} from './slack/bot.js';
-import {
-  RegisterSlackHandlers,
-  NotifyTaskCompleted,
-  NotifyError,
-  NotifyProgress,
-  NotifyWorkLog,
-  CreateIssueThread,
-} from './slack/handlers.js';
+import { GetSlackBot } from './slack/bot.js';
 import {
   InitGitHubPoller,
   StartGitHubPoller,
@@ -47,6 +33,7 @@ import { GetOrCloneRepo, GetWorkspacePath } from './git/repo.js';
 import {
   GetSlackUserForGitHub,
   GetAdminSlackUser,
+  GetAdminConfig,
 } from './admin/store.js';
 import { SetupGlobalMcpConfig } from './mcp/setup.js';
 import { RecordTaskCompletion, RecordMemoryEvent } from './history/recorder.js';
@@ -64,11 +51,14 @@ import {
   StopReflectionScheduler,
 } from './reflection/scheduler.js';
 import { SetProcessingRef } from './reflection/engine.js';
-import {
-  PostReflectionResult,
-  SetSuggestionApprovedCallback,
-} from './slack/handlers.js';
 import { Msg } from './messages.js';
+
+// Channel abstraction
+import { AdapterRegistry } from './channel/registry.js';
+import { NotificationRouter } from './channel/router.js';
+import { SlackAdapter } from './slack/adapter.js';
+import { LineAdapter } from './line/adapter.js';
+import { HttpAdapter } from './http/adapter.js';
 
 // 作業ログの投稿間隔（ミリ秒）
 const WORK_LOG_INTERVAL_MS = 10000;
@@ -79,6 +69,10 @@ let _config: Config | undefined;
 let _taskQueue: TaskQueue | undefined;
 let _claudeRunner: ClaudeRunner | undefined;
 let _isProcessing = false;
+
+// チャネル抽象化
+let _registry: AdapterRegistry | undefined;
+let _router: NotificationRouter | undefined;
 
 /**
  * アプリケーションを起動する
@@ -100,14 +94,45 @@ async function Start(): Promise<void> {
   _taskQueue = GetTaskQueue();
   _claudeRunner = GetClaudeRunner();
 
-  // Slack Bot を初期化・起動
-  const slackApp = InitSlackBot(_config);
-  RegisterSlackHandlers(slackApp, _config.slackChannelId, HandleSlackMention, _config.allowedUsers);
-  await StartSlackBot();
+  // アダプタレジストリを初期化
+  _registry = new AdapterRegistry();
+  _router = new NotificationRouter(_registry);
 
-  // 承認サーバーを初期化・起動
-  InitApprovalServer(slackApp, _config.slackChannelId);
+  // Slack アダプタを登録（常に有効）
+  const slackAdapter = new SlackAdapter(_config);
+  _registry.register(slackAdapter);
+
+  // LINE アダプタを条件付きで登録
+  if (_config.channelConfig.line) {
+    const lineAdapter = new LineAdapter(_config);
+    _registry.register(lineAdapter);
+    console.log('LINE adapter registered (channel token present)');
+  }
+
+  // HTTP アダプタを条件付きで登録
+  if (_config.channelConfig.http) {
+    const httpAdapter = new HttpAdapter(_config, _registry);
+    _registry.register(httpAdapter);
+    console.log('HTTP adapter registered (HTTP_CHANNEL_ENABLED=true)');
+  }
+
+  // 全アダプタを初期化（SDK初期化、コールバック登録）
+  await _registry.initAll({
+    onMessage: HandleChannelMessage,
+  });
+
+  // 承認サーバーを初期化・起動（HTTP アダプタがルートをマウントする前に必要）
+  InitApprovalServer(_router);
   await StartApprovalServer(_config.approvalServerPort);
+
+  // 全アダプタを起動（HTTP アダプタは承認サーバーの Express にマウントする場合がある）
+  await _registry.startAll();
+
+  // Slackアダプタが正常起動したことを検証（起動失敗は致命的）
+  const slackHealth = slackAdapter.getHealth();
+  if (slackHealth.status !== 'healthy') {
+    throw new Error('Slack adapter failed to start - cannot continue without Slack');
+  }
 
   // GitHub Poller を初期化・開始
   InitGitHubPoller(_config);
@@ -118,9 +143,8 @@ async function Start(): Promise<void> {
 
   // 内省スケジューラを初期化・起動
   SetProcessingRef(() => _isProcessing);
-  SetSuggestionApprovedCallback(HandleSlackMention);
   InitReflectionScheduler(_config, async (result) => {
-    await PostReflectionResult(slackApp, _config!.slackChannelId, result);
+    await _router!.postReflectionResult(result);
   });
   StartReflectionScheduler();
 
@@ -140,7 +164,11 @@ async function Stop(): Promise<void> {
   StopReflectionScheduler();
   StopGitHubPoller();
   await StopApprovalServer();
-  await StopSlackBot();
+
+  // 全アダプタを停止
+  if (_registry) {
+    await _registry.stopAll();
+  }
 
   // worktree をクリーンアップ
   await CleanupAllWorktrees();
@@ -149,19 +177,19 @@ async function Stop(): Promise<void> {
 }
 
 /**
- * Slack メンションを処理する
+ * 各チャネルからのメッセージを処理する（統一エントリーポイント）
  */
-async function HandleSlackMention(
-  metadata: SlackTaskMetadata,
+async function HandleChannelMessage(
+  metadata: TaskMetadata,
   prompt: string
 ): Promise<void> {
-  console.log(`HandleSlackMention called: prompt="${prompt.slice(0, 50)}", thread=${metadata.threadTs}, user=${metadata.userId}`);
+  console.log(`HandleChannelMessage called: source=${metadata.source}, prompt="${prompt.slice(0, 50)}"`);
   if (!_taskQueue || !_config) return;
 
   // タスクをキューに追加
-  const task = _taskQueue.AddTask('slack', prompt, metadata);
+  const task = _taskQueue.AddTask(metadata.source, prompt, metadata);
 
-  console.log(`Task added from Slack: ${task.id}`);
+  console.log(`Task added from ${metadata.source}: ${task.id}`);
 }
 
 /**
@@ -171,13 +199,10 @@ async function HandleGitHubIssue(
   metadata: GitHubTaskMetadata,
   prompt: string
 ): Promise<void> {
-  if (!_taskQueue || !_config) return;
+  if (!_taskQueue || !_config || !_router) return;
 
-  // Slack にスレッドを作成
-  const slackApp = GetSlackBot();
-  const threadTs = await CreateIssueThread(
-    slackApp,
-    _config.slackChannelId,
+  // ルーター経由でIssueスレッドを作成
+  const threadTs = await _router.createIssueThread(
     metadata.owner,
     metadata.repo,
     metadata.issueNumber,
@@ -244,7 +269,7 @@ function OnTaskAdded(_task: Task): void {
  */
 async function ProcessNextTask(): Promise<void> {
   console.log(`ProcessNextTask called: isProcessing=${_isProcessing}, isRunning=${_isRunning}, pendingTasks=${_taskQueue?.GetPendingCount() ?? 'N/A'}`);
-  if (!_taskQueue || !_claudeRunner || !_config) return;
+  if (!_taskQueue || !_claudeRunner || !_config || !_router) return;
   if (_isProcessing) return;
   if (!_isRunning) return;
 
@@ -252,11 +277,10 @@ async function ProcessNextTask(): Promise<void> {
   if (!task) return;
 
   _isProcessing = true;
-  const threadTs = GetThreadTs(task);
-  const requestedBySlackId = GetRequestedBySlackId(task);
-  SetCurrentTaskId(task.id, threadTs, requestedBySlackId);
+  const requestedByUserId = GetRequestedByUserId(task);
+  SetCurrentTaskId(task.id, task.metadata, requestedByUserId);
 
-  console.log(`Processing task: ${task.id} (requestedBy: ${requestedBySlackId ?? 'none'})`);
+  console.log(`Processing task: ${task.id} (requestedBy: ${requestedByUserId ?? 'none'})`);
 
   // メモリ関連の状態
   let memoryRoutingResult: MemoryRoutingResult | null = null;
@@ -274,10 +298,9 @@ async function ProcessNextTask(): Promise<void> {
     if (task.metadata.source === 'github') {
       // GitHub Issue の場合は worktree で処理
       result = await ProcessGitHubTask(task, memoryContext);
-    } else {
+    } else if (task.metadata.source === 'slack') {
       // Slack の場合
-      const slackApp = GetSlackBot();
-      const slackMeta = task.metadata;
+      const slackMeta = task.metadata as SlackTaskMetadata;
       const sessionStore = GetSessionStore();
 
       // Issue用スレッドかどうかをチェック
@@ -299,8 +322,9 @@ async function ProcessNextTask(): Promise<void> {
           result = await ProcessSlackWithTargetRepo(task, linkedTargetRepo, memoryContext);
         } else {
         // 通常のSlackタスク
-        // 同じスレッドの既存セッションを取得
-        const existingSession = sessionStore.Get(slackMeta.threadTs, slackMeta.userId);
+        // 同じスレッドの既存セッションを取得（チャネル固有 → canonical userフォールバック）
+        const existingSession = sessionStore.Get(slackMeta.threadTs, slackMeta.userId)
+          ?? GetCrossChannelSession(task.metadata);
         const existingSessionId = existingSession?.sessionId;
         if (existingSessionId) {
           console.log(`Resuming existing session for thread ${slackMeta.threadTs}: ${existingSessionId}`);
@@ -308,7 +332,7 @@ async function ProcessNextTask(): Promise<void> {
           console.log(`Creating new session for thread ${slackMeta.threadTs}`);
         }
 
-        const onWorkLog = CreateWorkLogCallback(slackApp, _config!.slackChannelId, slackMeta.threadTs);
+        const onWorkLog = CreateWorkLogCallback(task);
 
         // Slackコンテキスト + メモリコンテキストをプロンプトに追加
         const promptWithContext = task.prompt + BuildSlackContext(
@@ -329,18 +353,28 @@ async function ProcessNextTask(): Promise<void> {
         // 新しいセッションIDが返された場合は保存
         if (runResult.sessionId) {
           sessionStore.Set(slackMeta.threadTs, slackMeta.userId, runResult.sessionId, workingDirectory);
+          SaveCrossChannelSession(task.metadata, runResult.sessionId, undefined, workingDirectory);
           console.log(`Session saved for thread ${slackMeta.threadTs}: ${runResult.sessionId}`);
         }
 
         result = runResult;
         }
       }
+    } else if (task.metadata.source === 'line') {
+      // LINE の場合
+      result = await ProcessLineTask(task);
+    } else if (task.metadata.source === 'http') {
+      // HTTP (M5 Stack等) の場合
+      result = await ProcessHttpTask(task);
+    } else {
+      const _exhaustiveCheck: never = task.metadata;
+      result = { success: false, output: '', error: `Unsupported task source: ${(_exhaustiveCheck as TaskMetadata).source}` };
     }
 
     // タスクを完了としてマーク
     _taskQueue.CompleteTask(task.id, result);
 
-    // 結果を通知
+    // 結果を通知（ルーター経由）
     await NotifyResult(task, result);
 
     // 作業履歴を記録
@@ -358,14 +392,8 @@ async function ProcessNextTask(): Promise<void> {
       error: errorMessage,
     });
 
-    // エラーを通知
-    await NotifyError(
-      GetSlackBot(),
-      _config.slackChannelId,
-      task.id,
-      errorMessage,
-      GetThreadTs(task)
-    );
+    // エラーを通知（ルーター経由）
+    await _router.notifyError(task.id, task.metadata, errorMessage);
   } finally {
     ClearCurrentTaskId();
     _isProcessing = false;
@@ -383,12 +411,11 @@ async function ProcessSlackAsIssueTask(
   issueInfo: { owner: string; repo: string; issueNumber: number },
   memoryContext: string = ''
 ): Promise<{ success: boolean; output: string; prUrl?: string; error?: string }> {
-  if (!_config || !_claudeRunner) {
+  if (!_config || !_claudeRunner || !_router) {
     return { success: false, output: '', error: 'Not initialized' };
   }
 
   const slackMeta = task.metadata as SlackTaskMetadata;
-  const slackApp = GetSlackBot();
   const sessionStore = GetSessionStore();
 
   try {
@@ -408,11 +435,10 @@ async function ProcessSlackAsIssueTask(
     );
 
     if (isExisting) {
-      await NotifyProgress(
-        slackApp,
-        _config.slackChannelId,
-        Msg('task.resumeIssue', { issueNumber: String(issueInfo.issueNumber) }),
-        slackMeta.threadTs
+      await _router.notifyProgress(
+        task.id,
+        task.metadata,
+        Msg('task.resumeIssue', { issueNumber: String(issueInfo.issueNumber) })
       );
     }
 
@@ -429,7 +455,7 @@ async function ProcessSlackAsIssueTask(
       console.log(`Creating new session for issue #${issueInfo.issueNumber}`);
     }
 
-    const onWorkLog = CreateWorkLogCallback(slackApp, _config!.slackChannelId, slackMeta.threadTs);
+    const onWorkLog = CreateWorkLogCallback(task);
 
     // Slackコンテキスト + メモリコンテキストをプロンプトに追加して Claude CLI を実行
     const promptWithContext = task.prompt + BuildSlackContext(
@@ -449,6 +475,7 @@ async function ProcessSlackAsIssueTask(
     // セッションIDを保存
     if (runResult.sessionId) {
       sessionStore.SetForIssue(issueInfo.owner, issueInfo.repo, issueInfo.issueNumber, runResult.sessionId, worktreeInfo.worktreePath);
+      SaveCrossChannelSession(task.metadata, runResult.sessionId, `${issueInfo.owner}/${issueInfo.repo}`, worktreeInfo.worktreePath);
     }
 
     // 変更があればコミット＆プッシュ
@@ -456,11 +483,10 @@ async function ProcessSlackAsIssueTask(
     const hasChanges = await CommitAndPush(worktreeInfo, commitMessage);
 
     if (hasChanges) {
-      await NotifyProgress(
-        slackApp,
-        _config.slackChannelId,
-        Msg('task.commitPush'),
-        slackMeta.threadTs
+      await _router.notifyProgress(
+        task.id,
+        task.metadata,
+        Msg('task.commitPush')
       );
     }
 
@@ -488,12 +514,11 @@ async function ProcessSlackWithTargetRepo(
   targetRepo: string,
   memoryContext: string = ''
 ): Promise<{ success: boolean; output: string; prUrl?: string; error?: string }> {
-  if (!_config || !_claudeRunner) {
+  if (!_config || !_claudeRunner || !_router) {
     return { success: false, output: '', error: 'Not initialized' };
   }
 
   const slackMeta = task.metadata as SlackTaskMetadata;
-  const slackApp = GetSlackBot();
   const sessionStore = GetSessionStore();
 
   // owner/repo を分離（バリデーション済みなので必ず2要素）
@@ -522,23 +547,22 @@ async function ProcessSlackWithTargetRepo(
     );
 
     if (isExisting) {
-      await NotifyProgress(
-        slackApp,
-        _config.slackChannelId,
-        Msg('task.resumeBranch', { branch: worktreeInfo.branchName }),
-        slackMeta.threadTs
+      await _router.notifyProgress(
+        task.id,
+        task.metadata,
+        Msg('task.resumeBranch', { branch: worktreeInfo.branchName })
       );
     } else {
-      await NotifyProgress(
-        slackApp,
-        _config.slackChannelId,
-        Msg('task.startBranch', { branch: worktreeInfo.branchName }),
-        slackMeta.threadTs
+      await _router.notifyProgress(
+        task.id,
+        task.metadata,
+        Msg('task.startBranch', { branch: worktreeInfo.branchName })
       );
     }
 
-    // セッションを取得（スレッド+ユーザー単位）
-    const existingSession = sessionStore.Get(slackMeta.threadTs, slackMeta.userId);
+    // セッションを取得（スレッド+ユーザー → canonical userフォールバック）
+    const existingSession = sessionStore.Get(slackMeta.threadTs, slackMeta.userId)
+      ?? GetCrossChannelSession(task.metadata, targetRepo);
     const existingSessionId = existingSession?.sessionId;
     if (existingSessionId) {
       console.log(`Resuming existing session: ${existingSessionId}`);
@@ -546,7 +570,7 @@ async function ProcessSlackWithTargetRepo(
       console.log(`Creating new session for thread ${slackMeta.threadTs}`);
     }
 
-    const onWorkLog = CreateWorkLogCallback(slackApp, _config!.slackChannelId, slackMeta.threadTs);
+    const onWorkLog = CreateWorkLogCallback(task);
 
     // コンテキスト + メモリをプロンプトに追加
     const promptWithContext = task.prompt + BuildSlackRepoContext(
@@ -569,6 +593,7 @@ async function ProcessSlackWithTargetRepo(
     // セッションIDを保存（同じスレッドでの次回メッセージで再開するため）
     if (runResult.sessionId) {
       sessionStore.Set(slackMeta.threadTs, slackMeta.userId, runResult.sessionId, workingDirectory);
+      SaveCrossChannelSession(task.metadata, runResult.sessionId, targetRepo, workingDirectory);
       console.log(`Session saved for thread ${slackMeta.threadTs}: ${runResult.sessionId}`);
     }
 
@@ -590,18 +615,205 @@ async function ProcessSlackWithTargetRepo(
 }
 
 /**
+ * LINE タスクを処理する（汎用ワークスペースでセッション継続）
+ */
+async function ProcessLineTask(
+  task: Task
+): Promise<{ success: boolean; output: string; prUrl?: string; error?: string }> {
+  if (!_config || !_claudeRunner || !_router) {
+    return { success: false, output: '', error: 'Not initialized' };
+  }
+
+  const lineMeta = task.metadata as LineTaskMetadata;
+  const sessionStore = GetSessionStore();
+
+  try {
+    // targetRepo が指定されている場合はそのリポジトリの worktree で作業
+    if (lineMeta.targetRepo) {
+      const parts = lineMeta.targetRepo.split('/');
+      const owner = parts[0] as string;
+      const repo = parts[1] as string;
+
+      const repoPath = await GetOrCloneRepo(owner, repo, _config.githubToken);
+      const worktreeIdentifier = Date.now();
+      const { worktreeInfo } = await GetOrCreateWorktree(repoPath, owner, repo, worktreeIdentifier);
+
+      await _router.notifyProgress(
+        task.id,
+        task.metadata,
+        `ブランチ \`${worktreeInfo.branchName}\` で作業を開始いたしますわ`
+      );
+
+      // セッションを取得（LINE userId → canonical userフォールバック）
+      const existingSession = sessionStore.GetForLine(lineMeta.userId)
+        ?? GetCrossChannelSession(task.metadata, lineMeta.targetRepo);
+      const existingSessionId = existingSession?.sessionId;
+
+      const onWorkLog = CreateWorkLogCallback(task);
+      const promptWithContext = task.prompt + BuildLineContext(lineMeta, _config.githubRepos, lineMeta.targetRepo, worktreeInfo.branchName);
+      const workingDirectory = existingSession?.workingDirectory ?? worktreeInfo.worktreePath;
+
+      const runResult = await _claudeRunner.Run(task.id, promptWithContext, {
+        workingDirectory,
+        onWorkLog,
+        resumeSessionId: existingSessionId,
+        approvalServerPort: _config.approvalServerPort,
+      });
+
+      if (runResult.sessionId) {
+        sessionStore.SetForLine(lineMeta.userId, runResult.sessionId, workingDirectory);
+        SaveCrossChannelSession(task.metadata, runResult.sessionId, lineMeta.targetRepo, workingDirectory);
+      }
+
+      return {
+        success: runResult.success,
+        output: runResult.output,
+        prUrl: runResult.prUrl,
+        error: runResult.error,
+      };
+    }
+
+    // targetRepo なし: 汎用ワークスペースで実行
+    // セッション取得（LINE userId → canonical userフォールバック）
+    const existingSession = sessionStore.GetForLine(lineMeta.userId)
+      ?? GetCrossChannelSession(task.metadata);
+    const existingSessionId = existingSession?.sessionId;
+    if (existingSessionId) {
+      console.log(`Resuming LINE session for ${lineMeta.userId}: ${existingSessionId}`);
+    } else {
+      console.log(`Creating new LINE session for ${lineMeta.userId}`);
+    }
+
+    const onWorkLog = CreateWorkLogCallback(task);
+    const promptWithContext = task.prompt + BuildLineContext(lineMeta, _config.githubRepos);
+    const workingDirectory = existingSession?.workingDirectory ?? GetWorkspacePath();
+
+    const runResult = await _claudeRunner.Run(task.id, promptWithContext, {
+      workingDirectory,
+      onWorkLog,
+      resumeSessionId: existingSessionId,
+      approvalServerPort: _config.approvalServerPort,
+    });
+
+    if (runResult.sessionId) {
+      sessionStore.SetForLine(lineMeta.userId, runResult.sessionId, workingDirectory);
+      SaveCrossChannelSession(task.metadata, runResult.sessionId, undefined, workingDirectory);
+      console.log(`LINE session saved for ${lineMeta.userId}: ${runResult.sessionId}`);
+    }
+
+    return runResult;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`ProcessLineTask error: ${errorMessage}`);
+    return {
+      success: false,
+      output: '',
+      error: errorMessage,
+    };
+  }
+}
+
+/**
+ * HTTP タスクを処理する（汎用ワークスペースでセッション継続）
+ */
+async function ProcessHttpTask(
+  task: Task
+): Promise<{ success: boolean; output: string; prUrl?: string; error?: string }> {
+  if (!_config || !_claudeRunner || !_router) {
+    return { success: false, output: '', error: 'Not initialized' };
+  }
+
+  const httpMeta = task.metadata as HttpTaskMetadata;
+  const sessionStore = GetSessionStore();
+
+  try {
+    // targetRepo が指定されている場合はそのリポジトリの worktree で作業
+    if (httpMeta.targetRepo) {
+      const parts = httpMeta.targetRepo.split('/');
+      const owner = parts[0] as string;
+      const repo = parts[1] as string;
+
+      const repoPath = await GetOrCloneRepo(owner, repo, _config.githubToken);
+      const worktreeIdentifier = Date.now();
+      const { worktreeInfo } = await GetOrCreateWorktree(repoPath, owner, repo, worktreeIdentifier);
+
+      await _router.notifyProgress(task.id, task.metadata, `Branch: ${worktreeInfo.branchName}`);
+
+      // セッション取得（HTTP correlationId → canonical userフォールバック）
+      const existingSession = sessionStore.GetForHttp(httpMeta.correlationId)
+        ?? GetCrossChannelSession(task.metadata, httpMeta.targetRepo);
+      const existingSessionId = existingSession?.sessionId;
+
+      const onWorkLog = CreateWorkLogCallback(task);
+      const promptWithContext = task.prompt + BuildHttpContext(httpMeta, _config.githubRepos, httpMeta.targetRepo, worktreeInfo.branchName);
+      const workingDirectory = existingSession?.workingDirectory ?? worktreeInfo.worktreePath;
+
+      const runResult = await _claudeRunner.Run(task.id, promptWithContext, {
+        workingDirectory,
+        onWorkLog,
+        resumeSessionId: existingSessionId,
+        approvalServerPort: _config.approvalServerPort,
+      });
+
+      if (runResult.sessionId) {
+        sessionStore.SetForHttp(httpMeta.correlationId, runResult.sessionId, workingDirectory);
+        SaveCrossChannelSession(task.metadata, runResult.sessionId, httpMeta.targetRepo, workingDirectory);
+      }
+
+      return {
+        success: runResult.success,
+        output: runResult.output,
+        prUrl: runResult.prUrl,
+        error: runResult.error,
+      };
+    }
+
+    // targetRepo なし: 汎用ワークスペースで実行
+    // セッション取得（HTTP correlationId → canonical userフォールバック）
+    const existingSession = sessionStore.GetForHttp(httpMeta.correlationId)
+      ?? GetCrossChannelSession(task.metadata);
+    const existingSessionId = existingSession?.sessionId;
+
+    const onWorkLog = CreateWorkLogCallback(task);
+    const promptWithContext = task.prompt + BuildHttpContext(httpMeta, _config.githubRepos);
+    const workingDirectory = existingSession?.workingDirectory ?? GetWorkspacePath();
+
+    const runResult = await _claudeRunner.Run(task.id, promptWithContext, {
+      workingDirectory,
+      onWorkLog,
+      resumeSessionId: existingSessionId,
+      approvalServerPort: _config.approvalServerPort,
+    });
+
+    if (runResult.sessionId) {
+      sessionStore.SetForHttp(httpMeta.correlationId, runResult.sessionId, workingDirectory);
+      SaveCrossChannelSession(task.metadata, runResult.sessionId, undefined, workingDirectory);
+    }
+
+    return runResult;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`ProcessHttpTask error: ${errorMessage}`);
+    return {
+      success: false,
+      output: '',
+      error: errorMessage,
+    };
+  }
+}
+
+/**
  * GitHub Issue タスクを worktree で処理する（セッション継続対応）
  */
 async function ProcessGitHubTask(
   task: Task,
   memoryContext: string = ''
 ): Promise<{ success: boolean; output: string; prUrl?: string; error?: string }> {
-  if (!_config || !_claudeRunner) {
+  if (!_config || !_claudeRunner || !_router) {
     return { success: false, output: '', error: 'Not initialized' };
   }
 
   const meta = task.metadata as GitHubTaskMetadata;
-  const slackApp = GetSlackBot();
   const threadTs = meta.slackThreadTs;
   const sessionStore = GetSessionStore();
 
@@ -621,18 +833,16 @@ async function ProcessGitHubTask(
     );
 
     if (isExisting) {
-      await NotifyProgress(
-        slackApp,
-        _config.slackChannelId,
-        Msg('task.resumeBranch', { branch: worktreeInfo.branchName }),
-        threadTs
+      await _router.notifyProgress(
+        task.id,
+        task.metadata,
+        Msg('task.resumeBranch', { branch: worktreeInfo.branchName })
       );
     } else {
-      await NotifyProgress(
-        slackApp,
-        _config.slackChannelId,
-        Msg('task.startBranch', { branch: worktreeInfo.branchName }),
-        threadTs
+      await _router.notifyProgress(
+        task.id,
+        task.metadata,
+        Msg('task.startBranch', { branch: worktreeInfo.branchName })
       );
     }
 
@@ -641,11 +851,10 @@ async function ProcessGitHubTask(
     const existingSessionId = existingSession?.sessionId;
     if (existingSessionId) {
       console.log(`Resuming existing session for issue #${meta.issueNumber}: ${existingSessionId}`);
-      await NotifyProgress(
-        slackApp,
-        _config.slackChannelId,
-        Msg('task.resumeSession'),
-        threadTs
+      await _router.notifyProgress(
+        task.id,
+        task.metadata,
+        Msg('task.resumeSession')
       );
     } else {
       console.log(`Creating new session for issue #${meta.issueNumber}`);
@@ -659,9 +868,9 @@ async function ProcessGitHubTask(
       threadTs
     ) + memoryContext;
 
-    await NotifyProgress(slackApp, _config.slackChannelId, Msg('task.startClaude'), threadTs);
+    await _router.notifyProgress(task.id, task.metadata, Msg('task.startClaude'));
 
-    const onWorkLog = CreateWorkLogCallback(slackApp, _config!.slackChannelId, threadTs);
+    const onWorkLog = CreateWorkLogCallback(task);
 
     const runResult = await _claudeRunner.Run(task.id, worktreePrompt, {
       workingDirectory: worktreeInfo.worktreePath,
@@ -673,6 +882,7 @@ async function ProcessGitHubTask(
     // セッションIDを保存
     if (runResult.sessionId) {
       sessionStore.SetForIssue(meta.owner, meta.repo, meta.issueNumber, runResult.sessionId, worktreeInfo.worktreePath);
+      SaveCrossChannelSession(task.metadata, runResult.sessionId, `${meta.owner}/${meta.repo}`, worktreeInfo.worktreePath);
     }
 
     // Claude CLIの結果をそのまま返す（コミット・PR作成はLLMが判断して実行）
@@ -695,16 +905,13 @@ async function ProcessGitHubTask(
 }
 
 /**
- * 結果を通知する
+ * 結果を通知する（ルーター経由）
  */
 async function NotifyResult(
   task: Task,
   result: { success: boolean; output: string; prUrl?: string; error?: string }
 ): Promise<void> {
-  if (!_config) return;
-
-  const slackApp = GetSlackBot();
-  const threadTs = GetThreadTs(task);
+  if (!_config || !_router) return;
 
   if (result.success) {
     // Claudeの出力を送信（長すぎる場合は切り詰め）
@@ -717,18 +924,16 @@ async function NotifyResult(
       message = Msg('task.completeNoOutput');
     }
 
-    await NotifyTaskCompleted(
-      slackApp,
-      _config.slackChannelId,
+    await _router.notifyTaskCompleted(
       task.id,
+      task.metadata,
       message,
-      result.prUrl,
-      threadTs
+      result.prUrl
     );
 
     // GitHub Issue の場合はコメントを投稿
     if (task.metadata.source === 'github') {
-      const meta = task.metadata;
+      const meta = task.metadata as GitHubTaskMetadata;
       let comment = Msg('task.completeComment');
       if (result.prUrl) {
         comment += Msg('task.completeCommentPr', { prUrl: result.prUrl });
@@ -736,26 +941,46 @@ async function NotifyResult(
       await PostIssueComment(meta.owner, meta.repo, meta.issueNumber, comment);
     }
   } else {
-    await NotifyError(
-      slackApp,
-      _config.slackChannelId,
+    await _router.notifyError(
       task.id,
-      result.error ?? '不明なエラー',
-      threadTs
+      task.metadata,
+      result.error ?? '不明なエラー'
     );
   }
 }
 
 /**
- * タスクからスレッドタイムスタンプを取得する
+ * タスクから承認権限を持つユーザーIDを取得する
  */
-function GetThreadTs(task: Task): string | undefined {
+function GetRequestedByUserId(task: Task): string | undefined {
   if (task.metadata.source === 'slack') {
-    return task.metadata.threadTs;
+    // Slackからのリクエストはそのユーザーが承認権限を持つ
+    return task.metadata.userId;
   }
+
   if (task.metadata.source === 'github') {
-    return task.metadata.slackThreadTs;
+    // GitHubからのリクエストはマッピングから解決
+    const githubUser = task.metadata.requestingUser;
+    if (githubUser) {
+      const slackUserId = GetSlackUserForGitHub(githubUser);
+      if (slackUserId) {
+        return slackUserId;
+      }
+    }
+    // マッピングがない場合は管理者に通知
+    return GetAdminSlackUser();
   }
+
+  if (task.metadata.source === 'line') {
+    // LINEからのリクエストは LINE userId（承認は LINE アダプタ経由で処理）
+    return (task.metadata as LineTaskMetadata).userId;
+  }
+
+  if (task.metadata.source === 'http') {
+    // HTTPからのリクエストは deviceId（承認は HTTP アダプタ経由で処理）
+    return (task.metadata as HttpTaskMetadata).deviceId;
+  }
+
   return undefined;
 }
 
@@ -840,12 +1065,81 @@ ${slackThreadTs ? `- Thread TS: ${slackThreadTs}` : ''}
 }
 
 /**
- * 作業ログを Slack に投稿するコールバックを生成する
+ * LINEコンテキスト情報をプロンプトに追加する
+ */
+function BuildLineContext(
+  meta: LineTaskMetadata,
+  githubRepos: readonly string[],
+  targetRepo?: string,
+  branchName?: string
+): string {
+  const reposList = githubRepos.map(repo => `  - ${repo}`).join('\n');
+  let context = `
+---
+LINEコンテキスト情報:
+- ソース: LINE Bot
+- User ID: ${meta.userId}
+
+監視対象GitHubリポジトリ:
+${reposList}`;
+
+  if (targetRepo && branchName) {
+    context += `
+
+作業リポジトリ:
+- リポジトリ: ${targetRepo}
+- 作業ブランチ: ${branchName}
+
+目標:
+- リクエストされた内容を実装してください
+- 実装が完了したら、コミットしてPull Requestを作成してください`;
+  }
+
+  context += '\n---';
+  return context;
+}
+
+/**
+ * HTTPコンテキスト情報をプロンプトに追加する
+ */
+function BuildHttpContext(
+  meta: HttpTaskMetadata,
+  githubRepos: readonly string[],
+  targetRepo?: string,
+  branchName?: string
+): string {
+  const reposList = githubRepos.map(repo => `  - ${repo}`).join('\n');
+  let context = `
+---
+HTTPコンテキスト情報:
+- ソース: HTTP API
+- Correlation ID: ${meta.correlationId}
+${meta.deviceId ? `- Device ID: ${meta.deviceId}` : ''}
+
+監視対象GitHubリポジトリ:
+${reposList}`;
+
+  if (targetRepo && branchName) {
+    context += `
+
+作業リポジトリ:
+- リポジトリ: ${targetRepo}
+- 作業ブランチ: ${branchName}
+
+目標:
+- リクエストされた内容を実装してください
+- 実装が完了したら、コミットしてPull Requestを作成してください`;
+  }
+
+  context += '\n---';
+  return context;
+}
+
+/**
+ * 作業ログをチャネルに投稿するコールバックを生成する（ルーター経由）
  */
 function CreateWorkLogCallback(
-  slackApp: App,
-  channelId: string,
-  threadTs?: string
+  task: Task
 ): (log: WorkLog) => void {
   let lastWorkLogTime = 0;
 
@@ -863,43 +1157,76 @@ function CreateWorkLogCallback(
     lastWorkLogTime = now;
 
     try {
-      await NotifyWorkLog(
-        slackApp,
-        channelId,
+      await _router?.notifyWorkLog(
+        task.id,
+        task.metadata,
         log.type,
         log.message,
-        log.details,
-        threadTs
+        log.details
       );
     } catch (e) {
-      console.error('Failed to post work log to Slack:', e);
+      console.error('Failed to post work log:', e);
     }
   };
 }
 
 /**
- * タスクから承認権限を持つSlackユーザーIDを取得する
+ * チャネル横断セッション: タスク完了時にcanonical userキーにもセッションを保存する
  */
-function GetRequestedBySlackId(task: Task): string | undefined {
-  if (task.metadata.source === 'slack') {
-    // Slackからのリクエストはそのユーザーが承認権限を持つ
-    return task.metadata.userId;
-  }
+function SaveCrossChannelSession(
+  metadata: TaskMetadata,
+  sessionId: string,
+  targetRepo?: string,
+  workingDirectory?: string
+): void {
+  const sessionStore = GetSessionStore();
+  const config = GetAdminConfig();
+  const platformUserId = GetPlatformUserId(metadata);
+  if (!platformUserId) return;
 
-  if (task.metadata.source === 'github') {
-    // GitHubからのリクエストはマッピングから解決
-    const githubUser = task.metadata.requestingUser;
-    if (githubUser) {
-      const slackUserId = GetSlackUserForGitHub(githubUser);
-      if (slackUserId) {
-        return slackUserId;
-      }
-    }
-    // マッピングがない場合は管理者に通知
-    return GetAdminSlackUser();
-  }
+  const canonicalUserId = sessionStore.ResolveCanonicalUserId(
+    metadata.source,
+    platformUserId,
+    config.userMappings
+  );
+  if (!canonicalUserId) return;
 
-  return undefined;
+  sessionStore.SetForUser(canonicalUserId, sessionId, targetRepo, workingDirectory);
+  console.log(`Cross-channel session saved: user:${canonicalUserId}:${targetRepo ?? 'default'} -> ${sessionId}`);
+}
+
+/**
+ * チャネル横断セッション: canonical userキーからセッションを検索する（フォールバック用）
+ */
+function GetCrossChannelSession(
+  metadata: TaskMetadata,
+  targetRepo?: string
+): import('./session/store.js').SessionResult | undefined {
+  const sessionStore = GetSessionStore();
+  const config = GetAdminConfig();
+  const platformUserId = GetPlatformUserId(metadata);
+  if (!platformUserId) return undefined;
+
+  const canonicalUserId = sessionStore.ResolveCanonicalUserId(
+    metadata.source,
+    platformUserId,
+    config.userMappings
+  );
+  if (!canonicalUserId) return undefined;
+
+  return sessionStore.GetForUser(canonicalUserId, targetRepo);
+}
+
+/**
+ * メタデータからプラットフォーム固有のユーザーIDを取得する
+ */
+function GetPlatformUserId(metadata: TaskMetadata): string | undefined {
+  switch (metadata.source) {
+    case 'slack': return (metadata as SlackTaskMetadata).userId;
+    case 'github': return (metadata as GitHubTaskMetadata).requestingUser;
+    case 'line': return (metadata as LineTaskMetadata).userId;
+    case 'http': return (metadata as HttpTaskMetadata).deviceId;
+  }
 }
 
 /**

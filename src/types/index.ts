@@ -3,7 +3,7 @@
  */
 
 // タスクの種類
-export type TaskSource = 'github' | 'slack';
+export type TaskSource = 'github' | 'slack' | 'line' | 'http';
 
 // タスクの状態
 export type TaskStatus = 'pending' | 'running' | 'completed' | 'failed';
@@ -43,7 +43,25 @@ export interface SlackTaskMetadata {
   readonly targetRepo?: string; // owner/repo 形式。指定されたリポジトリのworktreeで作業
 }
 
-export type TaskMetadata = GitHubTaskMetadata | SlackTaskMetadata;
+// LINE からのタスクメタデータ
+export interface LineTaskMetadata {
+  readonly source: 'line';
+  readonly userId: string;
+  readonly replyToken?: string;
+  readonly messageText: string;
+  readonly targetRepo?: string;
+}
+
+// HTTP (M5 Stack等) からのタスクメタデータ
+export interface HttpTaskMetadata {
+  readonly source: 'http';
+  readonly correlationId: string;
+  readonly deviceId?: string;
+  readonly messageText: string;
+  readonly targetRepo?: string;
+}
+
+export type TaskMetadata = GitHubTaskMetadata | SlackTaskMetadata | LineTaskMetadata | HttpTaskMetadata;
 
 // タスク実行結果
 export interface TaskResult {
@@ -100,12 +118,16 @@ export interface QuestionResponse {
 export interface AllowedUsers {
   readonly github: readonly string[];  // GitHubユーザー名
   readonly slack: readonly string[];   // SlackユーザーID
+  readonly line: readonly string[];    // LINEユーザーID
+  readonly http: readonly string[];    // HTTPデバイスID
 }
 
-// ユーザーマッピング（GitHubユーザー名 <-> SlackユーザーID）
+// ユーザーマッピング（各チャネルのID紐付け）
 export interface UserMapping {
   github: string;
   slack: string;
+  line?: string;
+  http?: string;
 }
 
 // 管理設定（Slackコマンドで管理、~/.claps/admin-config.json に永続化）
@@ -128,6 +150,7 @@ export interface Config {
   readonly githubPollInterval: number;
   readonly allowedUsers: AllowedUsers;
   readonly reflectionConfig: ReflectionConfig;
+  readonly channelConfig: ChannelConfig;
   readonly memoryConfig: MemoryConfig;
 }
 
@@ -170,6 +193,7 @@ export interface WorkHistoryRecord {
   readonly id: string;
   readonly timestamp: string;
   readonly source: TaskSource;
+  readonly sourceChannel: TaskSource;
   readonly userId: string;
   readonly prompt: string;
   readonly result: 'success' | 'failure';
@@ -179,6 +203,37 @@ export interface WorkHistoryRecord {
   readonly prUrl?: string;
   readonly summary: string;
   readonly memoryEvent?: MemoryEvent;
+}
+
+// チャネル設定
+export interface ChannelConfig {
+  readonly line?: {
+    readonly channelSecret: string;
+    readonly channelToken: string;
+    readonly webhookPort: number;
+  };
+  readonly http?: {
+    readonly enabled: boolean;
+    readonly port?: number;
+  };
+}
+
+// アダプタ健全性
+export interface HealthStatus {
+  readonly name: string;
+  readonly status: 'healthy' | 'unhealthy' | 'starting' | 'stopped';
+  readonly message?: string;
+}
+
+// 通知コンテキスト
+export interface NotificationContext {
+  readonly taskId: string;
+  readonly metadata: TaskMetadata;
+}
+
+// アダプタコールバック
+export interface AdapterCallbacks {
+  readonly onMessage: (metadata: TaskMetadata, prompt: string) => Promise<void>;
 }
 
 // 内省結果
@@ -215,6 +270,24 @@ export interface ReflectionConfig {
   readonly timezone: string;
   readonly historyDays: number;
   readonly maxRecordsPerUser: number;
+}
+
+// ユーザーインテント（意図・目標）
+export interface UserIntent {
+  readonly userId: string;
+  readonly updatedAt: string;
+  readonly shortTermGoals: readonly IntentGoal[];
+  readonly longTermGoals: readonly IntentGoal[];
+}
+
+export interface IntentGoal {
+  readonly id: string;
+  readonly description: string;
+  readonly confidence: 'high' | 'medium' | 'low';
+  readonly firstSeenAt: string;
+  readonly lastSeenAt: string;
+  readonly evidence: readonly string[];
+  readonly status: 'active' | 'completed' | 'stale';
 }
 
 // Hook の入出力
